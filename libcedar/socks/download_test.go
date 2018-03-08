@@ -6,7 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/net/proxy"
+	"golang.org/x/net/proxy" //TODO: whether or not make this lib self-contained?
+	//To install from golang.org is hard under extreme networks condition
 )
 
 const (

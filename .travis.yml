@@ -5,6 +5,9 @@ go:
     - "1.8"
     - "1.9"
 
+before_script:
+    - make install_dependencies 
+    
 script:
     - make test
     - make vet

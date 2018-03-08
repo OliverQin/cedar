@@ -19,3 +19,6 @@ vet:
 fmt:
 	@if [ -n "$$(go fmt ./...)" ]; then echo 'Please run go fmt on your code.' && exit 1; fi
 
+install_dependencies:
+	go get golang.org/x/net/proxy
+	
