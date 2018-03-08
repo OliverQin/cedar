@@ -12,9 +12,10 @@ import (
 const (
 	proxyTestAddr = "127.0.0.1:9549"
 	urlTest       = "https://en.wikipedia.org/wiki/Main_Page"
+	featureString = "Wikipedia, the free encyclopedia"
 )
 
-func TestProxy(t *testing.T) {
+func TestProxyDownload(t *testing.T) {
 	// Typical way to use socks service
 	ssServer := NewServer()
 	ssClient := NewClient(proxyTestAddr)
@@ -48,7 +49,7 @@ func TestProxy(t *testing.T) {
 
 	// Check if the content is correct
 	respStr := string(buf[:n])
-	if strings.Count(respStr, "free encyclopedia") < 1 {
+	if strings.Count(respStr, featureString) < 1 {
 		log.Println(respStr)
 		panic("content error")
 	}
