@@ -15,6 +15,7 @@ const (
 )
 
 func TestProxy(t *testing.T) {
+	// Typical way to use socks service
 	ssServer := NewServer()
 	ssClient := NewClient(proxyTestAddr)
 
@@ -26,18 +27,17 @@ func TestProxy(t *testing.T) {
 		panic("cannot start socks service")
 	}
 
-	// create a socks5 dialer
+	// Create a socks5 dialer
 	dialer, err := proxy.SOCKS5("tcp", proxyTestAddr, nil, proxy.Direct)
 	if err != nil {
 		log.Panicln("can not connect to the proxy", err)
 	}
-	// setup a http client
+	// Setup a http client
 	httpTransport := &http.Transport{}
 	httpTransport.Dial = dialer.Dial
 	httpClient := &http.Client{Transport: httpTransport}
-	// set our socks5 as the dialer
 
-	// create a request
+	// Create a request
 	req, err := httpClient.Get(urlTest)
 	log.Println("running")
 	if err != nil {
@@ -46,6 +46,7 @@ func TestProxy(t *testing.T) {
 	buf := make([]byte, 1024*1024*1) //1MiB
 	n, err := req.Body.Read(buf)
 
+	// Check if the content is correct
 	respStr := string(buf[:n])
 	if strings.Count(respStr, "free encyclopedia") < 1 {
 		log.Println(respStr)

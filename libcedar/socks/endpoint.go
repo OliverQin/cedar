@@ -5,15 +5,17 @@ It contains two types of endpoint: Server and Client.
 Typically, Client works locally, listening for SOCKS requests from applications like browsers.
 While Server works on another machine, getting command from Client, connecting to the remote, sending data back, etc.
 
-Server and Client are communicated via commands (read the code for the protocol).
-When one endpoint generates command, it should be fetched to the other endpoint, like this:
-	ssServer := NewServer("localhost:1080")
-	ssClient := NewClient()
+Server and Client are communicated via commands (see the source for the protocol used).
 
-	ssServer.OnCommandGenerated = CommandGeneratedFunc(ssClient.DataReceived)
-	ssClient.OnCommandGenerated = CommandGeneratedFunc(ssServer.DataReceived)
+When one endpoint generates command, it should be fetched to the other endpoint, like this:
+	ssServer := NewServer()
+	ssClient := NewClient("localhost:1080")
+
+	ssServer.OnCommandGenerated = ssClient.WriteCommand
+	ssClient.OnCommandGenerated = ssServer.WriteCommand
 
 Known issues:
+
 Features like authentication are not supported (yet).
 */
 package socks
