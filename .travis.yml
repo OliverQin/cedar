@@ -9,4 +9,3 @@ script:
     - make test
     - make vet
     - make fmt
-
