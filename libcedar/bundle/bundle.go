@@ -405,7 +405,7 @@ func (bd *FiberBundle) keepForwarding() {
 				ff, ok := bd.receiveBuffer[seq]
 				//log.Println("seq, status", seq, ok)
 				if ok {
-					bd.seqs[download]++
+					atomic.AddUint32(&bd.seqs[download], 1)
 					if bd.onReceived != nil {
 						(*bd.onReceived)(bd.id, ff.message)
 						//log.Println("[Step  9] call_bd_onrec", ff.id)
@@ -421,7 +421,6 @@ func (bd *FiberBundle) keepForwarding() {
 			break
 		}
 	}
-	return
 }
 
 func (bd *FiberBundle) inRange(packetId uint32) bool {

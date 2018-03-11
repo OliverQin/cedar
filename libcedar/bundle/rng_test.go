@@ -18,9 +18,9 @@ func TestRngDistribution(t *testing.T) {
 	for i := 0; i < 256; i++ {
 		if histo[i] < 3796 || histo[i] > 4396 {
 			t.Error("Bin", i, "=", histo[i], "(Should between [3796, 4396])")
-		} else {
+		} /* else {
 			t.Log("Bin", i, "=", histo[i])
-		}
+		}*/
 	}
 }
 
