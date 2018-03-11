@@ -22,6 +22,7 @@ const (
 )
 
 func timeStamp() uint32 {
+	//TODO: not used yet, probably useful for anti-replay
 	return uint32(time.Now().Unix() - epochStart)
 }
 

@@ -47,6 +47,7 @@ func BenchmarkRngReadGoroutine(b *testing.B) {
 	a := make([][]byte, b.N)
 	for i := 0; i < b.N; i++ {
 		a[i] = make([]byte, 23333)
+		//FIXME: this is wrong
 		go DefaultRNG.Read(a[i])
 	}
 }
@@ -55,6 +56,7 @@ func BenchmarkRngSystemReadGoroutine(b *testing.B) {
 	a := make([][]byte, b.N)
 	for i := 0; i < b.N; i++ {
 		a[i] = make([]byte, 23333)
+		//FIXME: this is wrong
 		go rand.Read(a[i])
 	}
 }
