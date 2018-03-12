@@ -1,9 +1,7 @@
 package bundle
 
 import (
-	"fmt"
 	"net"
-	"os"
 )
 
 type Endpoint struct {
@@ -13,8 +11,9 @@ type Endpoint struct {
 	addr         string
 	endpointType string
 
-	onReceived *FuncDataReceived
-	mbd        *FiberBundle
+	mbd *FiberBundle
+
+	onReceived FuncDataReceived
 }
 
 func NewEndpoint(bufferLen uint32, endpointType string, addr string, password string) *Endpoint {
@@ -30,15 +29,8 @@ func NewEndpoint(bufferLen uint32, endpointType string, addr string, password st
 	n.bundles[0] = NewFiberBundle(bufferLen, endpointType, password)
 	n.mbd = nil
 
-	callback := func(id uint32, message []byte) {
-		fn := fmt.Sprint(id) + "_rec.bin"
-		//log.Println("printing...")
-		f, _ := os.OpenFile(fn, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
-		f.Write([]byte(message))
-		f.Close()
-	}
 	//type FuncDataReceived func(id uint32, message []byte)
-	n.onReceived = (*FuncDataReceived)(&callback)
+	//n.onReceived = (*FuncDataReceived)(&callback)
 
 	return n
 }
@@ -113,9 +105,35 @@ func (ep *Endpoint) CreateConnection(numberOfConnections int) {
 	}
 }
 
-func (ep *Endpoint) Write(message []byte) {
+func (ep *Endpoint) Write(id uint32, message []byte) {
 	//log.Println("[Step  1]", len(message))
-	//nmessage := make([]byte, len(message))
+	//nmessage := make([]byte, lonReceiveden(message))
 	//copy(nmessage, message)
-	ep.mbd.SendMessage(message)
+	if id == 0 {
+		//TODO: bug when mbd is not prepared
+		ep.mbd.SendMessage(message)
+	} else {
+		p, ok := ep.bundles[id]
+		if ok {
+			p.SendMessage(message)
+		} else {
+			panic("id does not exist")
+		}
+	}
+	return
+}
+
+func (ep *Endpoint) SetOnReceived(f FuncDataReceived) {
+	/*if id == 0 {
+		ep.mbd.SetOnReceived(f)
+	} else {
+		p, ok := ep.bundles[id]
+		if ok {
+			p.SetOnReceived(f)
+		} else {
+			panic("id does not exist")
+		}
+	}
+	return*/
+	ep.onReceived = f
 }

@@ -1,7 +1,10 @@
 package bundle
 
 import (
+	"crypto/sha512"
+	"encoding/hex"
 	"hash"
+	"log"
 	"sync"
 	"testing"
 	"time"
@@ -26,50 +29,78 @@ func (f *pseudoRandomFile) Read(buf []byte) {
 }
 
 const serverAddr = "127.0.0.1:64338"
+const numOfClients = 5
+const testFileLength = 2 * 1024 * 1024
+const bufSize = 2048
+const fileSha512 = "f8228ab81fa60c2db4bc7f1ad9b5c8f96de4df2a2c2498772d223e1a84c1836e14637f2487536d24bd2fc3bd838121c50fe5d95c5360b337b7a309601cb94188"
 
-//const numOfClients = 2
+var finishChannel = make(chan int, numOfClients)
 
 var hashLock sync.Mutex
 var hashers = make(map[uint32]hash.Hash)
+var lengthMap = make(map[uint32]int)
+
+func callback(id uint32, message []byte) {
+	hashLock.Lock()
+	defer hashLock.Unlock()
+
+	_, ok := hashers[id]
+	if !ok {
+		hashers[id] = sha512.New()
+		lengthMap[id] = 0
+	}
+
+	hashers[id].Write(message)
+	lengthMap[id] += len(message)
+	//log.Println(len(message), id, lengthMap[id])
+	if lengthMap[id] == testFileLength {
+		hashRet := hex.EncodeToString(hashers[id].Sum(nil))
+		log.Println("file", id, "=", hashRet)
+		if hashRet != fileSha512 {
+			panic("hash does not match, something implemented goes wrong")
+		}
+		finishChannel <- 0
+	}
+}
 
 func StartServer() {
 	sv := NewEndpoint(500, "server", serverAddr, "test")
+	sv.SetOnReceived(callback)
 	sv.ServerStart()
 }
 
 func StartClient() {
-	clt := NewEndpoint(500, "client", serverAddr, "test")
-	clt.CreateConnection(10)
+	clts := make([]*Endpoint, 0)
 
-	time.Sleep(time.Millisecond * 500)
+	for i := 0; i < numOfClients; i++ {
+		clt := NewEndpoint(500, "client", serverAddr, "test")
+		//clt.SetOnReceived(callback)
+		clt.CreateConnection(10)
+		clts = append(clts, clt)
+	}
 
 	fi := newPseudoRandomFile()
-	for i := 0; i < 2048; i++ {
-		buf := make([]byte, 8192)
+	for j := 0; j < testFileLength/bufSize; j++ {
+		buf := make([]byte, bufSize)
 		fi.Read(buf)
-		clt.Write(buf)
+
+		for i := 0; i < numOfClients; i++ {
+			clts[i].Write(0, buf)
+		}
 	}
 
 	time.Sleep(time.Millisecond * 500)
 }
 
 func TestMultiClientLoopback(t *testing.T) {
-	SetGlobalResend(1000 * time.Millisecond)
+	SetGlobalResend(2000 * time.Millisecond)
 
 	go StartServer()
 	time.Sleep(500 * time.Millisecond)
 
 	go StartClient()
-	time.Sleep(10 * time.Second)
 
-	//if len(hashers) != numOfClients {
-	//	log.Panic("num of hashers ", len(hashers), " should be ", numOfClients)
-	//}
-	//for id, val := range hashers {
-	//hashStr := fmt.Sprintf("%x", val.Sum(nil))
-	//log.Printf("%d = %x", id, val.Sum(nil))
-	//if hashStr != "bedf74b44350af67a4a570195f9ae860cd719ac98b0619a7cfe9fdf1248fa528" {
-	//	log.Panic("hash wrong")
-	//}
-	//}
+	for i := 0; i < numOfClients; i++ {
+		<-finishChannel
+	}
 }

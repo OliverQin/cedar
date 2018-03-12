@@ -9,6 +9,9 @@ import (
 	"time"
 )
 
+//TODO: add heartbeat
+
+type FuncBundleCreated func(id uint32)
 type FuncDataReceived func(id uint32, message []byte)
 type FuncBundleLost func(id uint32)
 type FuncFiberLost func(id uint32)
@@ -45,9 +48,10 @@ type FiberBundle struct {
 	confirmGotSignal map[uint32]chan empty
 	confirmGotLock   sync.RWMutex
 
-	onReceived   *FuncDataReceived
-	onFiberLost  *FuncFiberLost
-	onBundleLost *FuncBundleLost
+	onBundleCreated FuncBundleCreated
+	onReceived      FuncDataReceived
+	onFiberLost     FuncFiberLost
+	onBundleLost    FuncBundleLost
 }
 
 func NewFiberBundle(bufferLen uint32, bundleType string, masterPhrase string) *FiberBundle {
@@ -97,16 +101,20 @@ func NewFiberBundle(bufferLen uint32, bundleType string, masterPhrase string) *F
 	return ret
 }
 
-func (bd *FiberBundle) SetOnReceived(f *FuncDataReceived) {
+func (bd *FiberBundle) SetOnReceived(f FuncDataReceived) {
 	bd.onReceived = f
 }
 
-func (bd *FiberBundle) SetOnFiberLost(f *FuncFiberLost) {
+func (bd *FiberBundle) SetOnFiberLost(f FuncFiberLost) {
 	bd.onFiberLost = f
 }
 
-func (bd *FiberBundle) SetOnBundleLost(f *FuncBundleLost) {
+func (bd *FiberBundle) SetOnBundleLost(f FuncBundleLost) {
 	bd.onBundleLost = f
+}
+
+func (bd *FiberBundle) SetOnBundleCreated(f FuncBundleCreated) {
+	bd.onBundleCreated = f
 }
 
 func (bd *FiberBundle) GetSize() int {
@@ -407,7 +415,7 @@ func (bd *FiberBundle) keepForwarding() {
 				if ok {
 					atomic.AddUint32(&bd.seqs[download], 1)
 					if bd.onReceived != nil {
-						(*bd.onReceived)(bd.id, ff.message)
+						bd.onReceived(bd.id, ff.message)
 						//log.Println("[Step  9] call_bd_onrec", ff.id)
 					}
 				} else {
