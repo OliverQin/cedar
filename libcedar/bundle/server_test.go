@@ -29,7 +29,7 @@ func (f *pseudoRandomFile) Read(buf []byte) {
 }
 
 const serverAddr = "127.0.0.1:64338"
-const numOfClients = 5
+const numOfClients = 6
 const testFileLength = 2 * 1024 * 1024
 const bufSize = 2048
 const fileSha512 = "f8228ab81fa60c2db4bc7f1ad9b5c8f96de4df2a2c2498772d223e1a84c1836e14637f2487536d24bd2fc3bd838121c50fe5d95c5360b337b7a309601cb94188"
@@ -46,6 +46,7 @@ func callback(id uint32, message []byte) {
 
 	_, ok := hashers[id]
 	if !ok {
+		log.Println("file", id, "created.")
 		hashers[id] = sha512.New()
 		lengthMap[id] = 0
 	}
