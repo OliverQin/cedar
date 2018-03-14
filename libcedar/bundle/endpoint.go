@@ -52,7 +52,7 @@ func (ep *Endpoint) ServerStart() {
 		if err == nil {
 			bd := ep.bundles[0]
 			//log.Println("server new fiber...", bd.id)
-			id, err := bd.addConnection(conn)
+			id, fb, err := bd.addConnection(conn)
 			if err != nil {
 				continue
 			}
@@ -60,12 +60,12 @@ func (ep *Endpoint) ServerStart() {
 			nbd, ok := ep.bundles[id]
 			//log.Println(id, "adding...")
 			if ok {
-				nbd.addAndReceive(conn)
+				nbd.addAndReceive(fb)
 			} else {
 				ep.bundles[id] = bd
 				ep.mbd = ep.bundles[bd.id]
 				ep.mbd.SetOnReceived(ep.onReceived)
-				ep.bundles[bd.id].addAndReceive(conn)
+				ep.bundles[bd.id].addAndReceive(fb)
 				ep.bundles[0] = NewFiberBundle(ep.bufferLen, ep.endpointType, ep.password)
 			}
 		}
@@ -91,9 +91,9 @@ func (ep *Endpoint) CreateConnection(numberOfConnections int) {
 			bd = ep.mbd
 		}
 		//log.Println("bundle add..", bd.id)
-		_, err = bd.addConnection(conn)
+		_, fb, err := bd.addConnection(conn)
 		//log.Println("bundle add", err, bd.id)
-		bd.addAndReceive(conn)
+		bd.addAndReceive(fb)
 
 		ep.bundles[bd.id] = bd
 		ep.mbd = ep.bundles[bd.id]

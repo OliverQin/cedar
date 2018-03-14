@@ -125,7 +125,8 @@ AddConnection tries to add one connection to this fiber bundle.
 It succeeds with (id, nil) as return value.
 It returns (0, errCode) at failure.
 */
-func (bd *FiberBundle) addConnection(conn rwcDeadliner) (uint32, error) {
+func (bd *FiberBundle) addConnection(conn rwcDeadliner) (uint32, *fiber, error) {
+	//FIXME: this ugly signature is a work around
 	fb := newFiber(conn, bd.keys)
 
 	var err error
@@ -137,15 +138,14 @@ func (bd *FiberBundle) addConnection(conn rwcDeadliner) (uint32, error) {
 		id, err = bd.waitHandshake(fb)
 	}
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 
-	return id, nil
+	return id, fb, nil
 }
 
-func (bd *FiberBundle) addAndReceive(conn rwcDeadliner) {
-	fb := newFiber(conn, bd.keys)
-
+func (bd *FiberBundle) addAndReceive(fb *fiber) {
+	//fb := newFiber(conn, bd.keys)
 	bd.fibersLock.Lock()
 	bd.fibers = append(bd.fibers, fb)
 	bd.fibersLock.Unlock()
@@ -349,6 +349,7 @@ func (bd *FiberBundle) keepConfirming() {
 
 		if len(info) > 0 {
 			fb.write(fiberFrame{info, typeDataReceived, 0})
+			//log.Println(time.Now(), &fb)
 		}
 
 		time.Sleep(globalConfirmWait)

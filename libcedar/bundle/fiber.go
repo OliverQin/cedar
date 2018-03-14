@@ -15,6 +15,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -33,7 +34,8 @@ type fiber struct {
 	conn rwcDeadliner
 	enc  encryptor
 
-	lastActivity time.Time
+	lastActivity     time.Time
+	lastActivityLock sync.Mutex
 
 	sigChan chan os.Signal
 }
@@ -63,8 +65,14 @@ func (fb *fiber) keepHeartbeating() {
 			fb.conn.Close()
 			return
 		case t := <-time.After(globalResend):
-			if fb.lastActivity.Add(globalResend).Before(t) {
+			fb.lastActivityLock.Lock()
+			nt := fb.lastActivity.Add(globalResend) //TODO: add randomness
+			fb.lastActivity = time.Now()
+			fb.lastActivityLock.Unlock()
+
+			if nt.Before(t) {
 				fb.sendHeartbeat()
+				//log.Println(nt, t, "heartbeat", &fb)
 			}
 		}
 	}
@@ -101,6 +109,10 @@ func (fb *fiber) read() (*fiberFrame, error) {
 	}
 	ret := fb.unpack(msg)
 
+	fb.lastActivityLock.Lock()
+	fb.lastActivity = time.Now()
+	fb.lastActivityLock.Unlock()
+
 	return ret, nil
 }
 
@@ -110,5 +122,10 @@ func (fb *fiber) write(f fiberFrame) error {
 	if n < len(packed) || err != nil {
 		return errFiberWrite
 	}
+
+	fb.lastActivityLock.Lock()
+	fb.lastActivity = time.Now()
+	fb.lastActivityLock.Unlock()
+
 	return nil
 }
