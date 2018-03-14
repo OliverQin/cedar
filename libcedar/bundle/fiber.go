@@ -33,6 +33,8 @@ type fiber struct {
 	conn rwcDeadliner
 	enc  encryptor
 
+	lastActivity time.Time
+
 	sigChan chan os.Signal
 }
 
@@ -44,10 +46,32 @@ func newFiber(conn rwcDeadliner, key encryptionKey) *fiber {
 	ret.conn = conn
 	ret.sigChan = make(chan os.Signal, 1) //TODO: use this
 
+	ret.lastActivity = time.Now()
+
 	newKey := key
 	ret.enc = &cedarEncryptor{&newKey, nil}
 
+	go ret.keepHeartbeating()
+
 	return ret
+}
+
+func (fb *fiber) keepHeartbeating() {
+	for {
+		select {
+		case <-fb.sigChan:
+			fb.conn.Close()
+			return
+		case t := <-time.After(globalResend):
+			if fb.lastActivity.Add(globalResend).Before(t) {
+				fb.sendHeartbeat()
+			}
+		}
+	}
+}
+
+func (fb *fiber) sendHeartbeat() {
+	fb.write(fiberFrame{nil, typeHeartbeat, 0})
 }
 
 func (fb *fiber) pack(f *fiberFrame) []byte {

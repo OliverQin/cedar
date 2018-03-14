@@ -12,7 +12,7 @@ const (
 	typeFiberAdded
 	typeSendData
 	typeDataReceived
-	typeHeartBeat
+	typeHeartbeat
 )
 
 const (

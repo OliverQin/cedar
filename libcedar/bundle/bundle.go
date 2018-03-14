@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-//TODO: add heartbeat
-
 type FuncBundleCreated func(id uint32)
 type FuncDataReceived func(id uint32, message []byte)
 type FuncBundleLost func(id uint32)
@@ -39,8 +37,7 @@ type FiberBundle struct {
 	sendLock   sync.RWMutex
 	//sendBuffer map[uint32]*fiberFrame
 
-	lastActivity time.Time
-	closeChan    chan empty
+	closeChan chan empty
 
 	confirmBuffer []uint32 //store ids to confirm
 	confirmLock   sync.RWMutex
@@ -86,7 +83,6 @@ func NewFiberBundle(bufferLen uint32, bundleType string, masterPhrase string) *F
 	ret.sendTokens = make(chan empty, bufferLen)
 	//ret.sendBuffer = make(map[uint32]*fiberFrame)
 
-	ret.lastActivity = time.Now()
 	ret.closeChan = make(chan empty, 4)
 
 	ret.confirmBuffer = make([]uint32, 0, bufferLen+1)
@@ -399,6 +395,8 @@ func (bd *FiberBundle) keepReceiving(fb *fiber) error {
 				}
 			}
 			bd.confirmGotLock.Unlock()
+		}
+		if ff.msgType == typeHeartbeat {
 		}
 	}
 }
