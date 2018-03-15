@@ -12,7 +12,7 @@ type cedarKdf struct {
 }
 
 func (cedarKdf) generate(masterPhrase string, salt string, bit int) []byte {
-	Rounds := 2333
+	Rounds := 233
 
 	tLen := len(masterPhrase) + len(salt)
 	buf := make([]byte, tLen+sha512.Size*Rounds)

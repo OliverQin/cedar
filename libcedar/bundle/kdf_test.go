@@ -15,7 +15,7 @@ func TestCedarKdf(t *testing.T) {
 	res := hex.EncodeToString(token)
 
 	log.Println(res)
-	if res != "95203e29f9a30f2561c4076b579cc02c3f0bf73788deca6d45c3a939ec2fe6b9" {
+	if res != "a332512bca33c1087513a3e026d38a4d9319e27f419f814440a142b4dad40d48" {
 		panic("kdf did not get expected result")
 	}
 }

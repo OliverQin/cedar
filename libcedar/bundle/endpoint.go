@@ -51,25 +51,38 @@ func (ep *Endpoint) ServerStart() {
 		conn, err := lst.Accept()
 		if err == nil {
 			bd := ep.bundles[0]
-			//log.Println("server new fiber...", bd.id)
+			if bd.id != 0 {
+				panic("only new bundle should be used for handshaking")
+			}
+
 			id, fb, err := bd.addConnection(conn)
 			if err != nil {
 				continue
 			}
+			if id != bd.id {
+				panic("after handshake id != bd.id")
+			}
 
 			nbd, ok := ep.bundles[id]
-			//log.Println(id, "adding...")
 			if ok {
 				nbd.addAndReceive(fb)
+				ep.bundles[0].id = 0
+				ep.bundles[0].seqs[download] = 0
+				ep.bundles[0].seqs[upload] = 0
+
 			} else {
 				ep.bundles[id] = bd
-				ep.mbd = ep.bundles[bd.id]
+				ep.mbd = bd
 				ep.mbd.SetOnReceived(ep.onReceived)
-				ep.bundles[bd.id].addAndReceive(fb)
+
+				bd.addAndReceive(fb)
 				ep.bundles[0] = NewFiberBundle(ep.bufferLen, ep.endpointType, ep.password)
+
+				if ep.bundles[0].id != 0 {
+					panic("?")
+				}
 			}
 		}
-		//log.Println("accepted,", i)
 	}
 }
 

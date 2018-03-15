@@ -130,15 +130,27 @@ func (bd *FiberBundle) addConnection(conn rwcDeadliner) (uint32, *fiber, error) 
 	fb := newFiber(conn, bd.keys)
 
 	var err error
-	var id uint32
+	var id, c2s, s2c uint32
 	id, err = 0, nil
 	if bd.bundleType == clientBundle {
-		id, err = bd.handshake(fb)
+		id, c2s, s2c, err = fb.handshake(bd.id)
 	} else {
-		id, err = bd.waitHandshake(fb)
+		id, c2s, s2c, err = fb.waitHandshake()
 	}
 	if err != nil {
 		return 0, nil, err
+	}
+
+	if bd.id == 0 { //A new bundle, not set yet
+		bd.id = id
+
+		if bd.bundleType == clientBundle {
+			bd.seqs[download] = s2c
+			bd.seqs[upload] = c2s
+		} else {
+			bd.seqs[upload] = s2c
+			bd.seqs[download] = c2s
+		}
 	}
 
 	return id, fb, nil
@@ -150,113 +162,8 @@ func (bd *FiberBundle) addAndReceive(fb *fiber) {
 	bd.fibers = append(bd.fibers, fb)
 	bd.fibersLock.Unlock()
 
+	fb.activate()
 	go bd.keepReceiving(fb)
-}
-
-/*
-handshake send handshake info to remote server.
-*/
-func (bd *FiberBundle) handshake(fb *fiber) (uint32, error) {
-	//If id is 0, ask server for a new id.
-	//Otherwise, tell server to add this fiber to the bundle with this id.
-	if bd.id == 0 {
-		err := fb.write(fiberFrame{[]byte(""), typeRequestAllocation, 0})
-		if err != nil {
-			return 0, err
-		}
-	} else {
-		var sendBuf [4]byte
-		binary.BigEndian.PutUint32(sendBuf[:], bd.id)
-		err := fb.write(fiberFrame{sendBuf[:], typeAddNewFiber, 0})
-		if err != nil {
-			return 0, err
-		}
-	}
-
-	//Read message sent back.
-	frm, err := fb.read()
-	if err != nil {
-		return 0, err
-	}
-
-	//Check message sent back.
-	tp := frm.msgType
-	if bd.id == 0 {
-		if tp != typeAllocationConfirm || len(frm.message) < 12 {
-			return 0, errAllocationFailed
-		}
-	} else {
-		if tp != typeFiberAdded {
-			return 0, errAddingFailed
-		}
-	}
-
-	//Modify metadata if it is allocation
-	if bd.id == 0 {
-		bufBack := frm.message
-		id := binary.BigEndian.Uint32(bufBack[:4])
-		s2c := binary.BigEndian.Uint32(bufBack[4:8])
-		c2s := binary.BigEndian.Uint32(bufBack[8:12])
-
-		bd.id = id
-		bd.seqs[download] = s2c
-		bd.seqs[upload] = c2s
-	}
-
-	return bd.id, nil
-}
-
-/*
-Add fiber to this bundle, only if id matches. Return 0, nil
-If id does not match, return id, nil, do not add fiber
-Error happens: return 0, err
-*/
-func (bd *FiberBundle) waitHandshake(fb *fiber) (uint32, error) {
-	f, err := fb.read()
-	if err != nil {
-		return 0, err
-	}
-
-	id := uint32(0)
-	switch f.msgType {
-	case typeRequestAllocation:
-		for id == 0 {
-			id = DefaultRNG.Uint32()
-		}
-		bd.id = id
-
-		var bufBack [12]byte
-		binary.BigEndian.PutUint32(bufBack[:4], id)
-		seqC2s := uint32(0) //DefaultRNG.Uint32()
-		seqS2c := uint32(0) //DefaultRNG.Uint32()
-		bd.seqs[upload] = seqS2c
-		bd.seqs[download] = seqC2s
-		binary.BigEndian.PutUint32(bufBack[4:8], seqS2c)
-		binary.BigEndian.PutUint32(bufBack[8:12], seqC2s)
-		writeError := fb.write(fiberFrame{bufBack[:], typeAllocationConfirm, 0})
-
-		if writeError != nil {
-			return id, writeError
-		}
-
-		return id, nil
-	case typeAddNewFiber:
-		id = binary.BigEndian.Uint32(f.message[:4])
-		bufBack := make([]byte, 4)
-		binary.BigEndian.PutUint32(bufBack, id)
-
-		writeError := fb.write(fiberFrame{bufBack[:], typeFiberAdded, 0})
-		if writeError != nil {
-			return id, writeError
-		}
-
-		if bd.id == id {
-			return id, nil
-		}
-		return id, nil
-	default:
-		return id, errUnexpectedRequest
-	}
 }
 
 /*
