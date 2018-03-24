@@ -3,6 +3,7 @@ package bundle
 import (
 	"log"
 	"net"
+	"sync"
 )
 
 type Endpoint struct {
@@ -12,7 +13,8 @@ type Endpoint struct {
 	addr         string
 	endpointType string
 
-	mbd *FiberBundle
+	mbd     *FiberBundle
+	mbdLock sync.RWMutex
 
 	onReceived FuncDataReceived
 }
@@ -73,7 +75,9 @@ func (ep *Endpoint) ServerStart() {
 
 			} else {
 				ep.bundles[id] = bd
+				ep.mbdLock.Lock()
 				ep.mbd = bd
+				ep.mbdLock.Unlock()
 				ep.mbd.SetOnReceived(ep.onReceived)
 
 				bd.addAndReceive(fb)
@@ -110,7 +114,9 @@ func (ep *Endpoint) CreateConnection(numberOfConnections int) {
 		bd.addAndReceive(fb)
 
 		ep.bundles[bd.id] = bd
+		ep.mbdLock.Lock()
 		ep.mbd = ep.bundles[bd.id]
+		ep.mbdLock.Unlock()
 		ep.mbd.SetOnReceived(ep.onReceived)
 		if ep.bundles[0] == bd {
 			ep.bundles[0] = NewFiberBundle(ep.bufferLen, ep.endpointType, ep.password)
@@ -125,7 +131,10 @@ func (ep *Endpoint) Write(id uint32, message []byte) {
 	//copy(nmessage, message)
 	if id == 0 {
 		//TODO: bug when mbd is not prepared
-		ep.mbd.SendMessage(message)
+		ep.mbdLock.RLock()
+		x := ep.mbd
+		ep.mbdLock.RUnlock()
+		x.SendMessage(message)
 	} else {
 		p, ok := ep.bundles[id]
 		if ok {

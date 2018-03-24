@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"testing"
 	"time"
 
 	"github.com/OliverQin/cedar/libcedar/bundle"
@@ -36,23 +37,23 @@ var bdServer = bundle.NewEndpoint(500, "server", serverAddr, "test_password")
 var bdClient = bundle.NewEndpoint(500, "client", serverAddr, "test_password")
 
 func callbackSvr(id uint32, message []byte) {
-	log.Println("svr Rec:", bundle.ShortHash(message))
+	log.Println("[svr.Rec]", bundle.ShortHash(message))
 	ssServer.WriteCommand(message)
 }
 
 func callbackClt(id uint32, message []byte) {
-	log.Println("clt Rec:", bundle.ShortHash(message))
+	log.Println("[clt.Rec]", bundle.ShortHash(message))
 	ssClient.WriteCommand(message)
 }
 
 func cmdGenSvr(message []byte) error {
-	log.Println("svr Gen:", bundle.ShortHash(message))
+	log.Println("[svr.Gen]", bundle.ShortHash(message))
 	bdServer.Write(0, message)
 	return nil
 }
 
 func cmdGenClt(message []byte) error {
-	log.Println("clt Gen:", bundle.ShortHash(message))
+	log.Println("[clt.Gen]", bundle.ShortHash(message))
 	bdClient.Write(0, message)
 	return nil
 }
@@ -77,7 +78,7 @@ func (writer logWriter) Write(bytes []byte) (int, error) {
 	return fmt.Printf("%.5f [Debug] %s", float64(time.Now().UnixNano())/1e9, bytes)
 }
 
-func main() {
+func TestRealProxy(t *testing.T) {
 	log.SetFlags(0)
 	log.SetOutput(new(logWriter))
 
@@ -101,5 +102,5 @@ func main() {
 	for i := 0; i < numOfClients; i++ {
 		<-finishChannel
 	}*/
-	time.Sleep(500 * time.Second)
+	time.Sleep(3000 * time.Second)
 }

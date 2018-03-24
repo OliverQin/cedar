@@ -210,6 +210,7 @@ func (fb *fiber) read() (*fiberFrame, error) {
 	msg, err := fb.enc.ReadPacket(fb.conn)
 
 	if err != nil {
+		panic("read error should not happen") //for debug
 		return nil, errFiberRead
 	}
 	ret := fb.unpack(msg)
@@ -232,6 +233,7 @@ func (fb *fiber) write(f fiberFrame) error {
 		log.Println("[Fiber.write]", f.id)
 	}
 	if n < len(packed) || err != nil {
+		panic("write error should not happen") //for debug
 		return errFiberWrite
 	}
 

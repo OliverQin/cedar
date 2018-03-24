@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"log"
 	"time"
 )
 
@@ -123,6 +124,10 @@ func (ce cedarEncryptor) WritePacket(conn io.ReadWriter, msg []byte) (int, error
 	//then encrypt
 	msgCipher.CryptBlocks(paddedMsg[FakeIvLength:], paddedMsg[FakeIvLength:])
 
+	ffid := binary.BigEndian.Uint32(msg[1:5])
+	if ffid != 0 {
+		defer log.Println("[Encryptor.Wrote]", ffid)
+	}
 	return conn.Write(paddedMsg)
 }
 
@@ -199,5 +204,9 @@ func (ce cedarEncryptor) ReadPacket(conn io.ReadWriter) ([]byte, error) {
 		return nil, errIllegalPacket
 	}
 
+	ffid := binary.BigEndian.Uint32(paddedMsg[HeadIvLen+1 : HeadIvLen+5])
+	if ffid != 0 {
+		defer log.Println("[Encryptor.Read]", ffid)
+	}
 	return paddedMsg[HeadIvLen : HeadIvLen+int(msgLen)], nil
 }

@@ -16,3 +16,7 @@
 # Coverage and Profile
 coverage.txt
 profile.out
+
+# Log files for debugging
+*.log
+

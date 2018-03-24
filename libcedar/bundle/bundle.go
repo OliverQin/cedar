@@ -46,6 +46,7 @@ type FiberBundle struct {
 	confirmGotSignal map[uint32]chan empty
 	confirmGotLock   sync.RWMutex
 
+	callbackLock    sync.RWMutex
 	onBundleCreated FuncBundleCreated
 	onReceived      FuncDataReceived
 	onFiberLost     FuncFiberLost
@@ -100,19 +101,27 @@ func NewFiberBundle(bufferLen uint32, bundleType string, masterPhrase string) *F
 }
 
 func (bd *FiberBundle) SetOnReceived(f FuncDataReceived) {
+	bd.callbackLock.Lock()
 	bd.onReceived = f
+	bd.callbackLock.Unlock()
 }
 
 func (bd *FiberBundle) SetOnFiberLost(f FuncFiberLost) {
+	bd.callbackLock.Lock()
 	bd.onFiberLost = f
+	bd.callbackLock.Unlock()
 }
 
 func (bd *FiberBundle) SetOnBundleLost(f FuncBundleLost) {
+	bd.callbackLock.Lock()
 	bd.onBundleLost = f
+	bd.callbackLock.Unlock()
 }
 
 func (bd *FiberBundle) SetOnBundleCreated(f FuncBundleCreated) {
+	bd.callbackLock.Lock()
 	bd.onBundleCreated = f
+	bd.callbackLock.Unlock()
 }
 
 func (bd *FiberBundle) GetSize() int {
@@ -252,7 +261,7 @@ func (bd *FiberBundle) keepConfirming() {
 		info := make([]byte, len(bd.confirmBuffer)*4)
 		for i := 0; i < len(info); i += 4 {
 			binary.BigEndian.PutUint32(info[i:i+4], bd.confirmBuffer[i/4])
-			//log.Println("[Step  6] Sending confirm :id", bd.confirmBuffer[i/4])
+			log.Println("[keepConfirming.confirmSent]", bd.confirmBuffer[i/4])
 		}
 		bd.confirmBuffer = bd.confirmBuffer[:0]
 		bd.confirmLock.Unlock()
@@ -310,7 +319,7 @@ func (bd *FiberBundle) keepReceiving(fb *fiber) error {
 			bd.confirmGotLock.Lock()
 			for i := 0; i < len(buf); i += 4 {
 				id := binary.BigEndian.Uint32(buf[i : i+4])
-				//log.Println("[Step  7] confirm got", id)
+				log.Println("[Bundle.keepReceiving.confirmReceived]", id)
 				chn, ok := bd.confirmGotSignal[id]
 				if ok {
 					chn <- empty{}
@@ -334,10 +343,12 @@ func (bd *FiberBundle) keepForwarding() {
 				//log.Println("seq, status", seq, ok)
 				if ok {
 					atomic.AddUint32(&bd.seqs[download], 1)
+					bd.callbackLock.RLock()
 					if bd.onReceived != nil {
 						bd.onReceived(bd.id, ff.message)
 						log.Println("[keepForwarding]", ff.id)
 					}
+					bd.callbackLock.RUnlock()
 				} else {
 					//log.Println("[Step  9--] waiting for ", seq)
 					break
