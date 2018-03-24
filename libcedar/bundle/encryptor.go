@@ -142,6 +142,7 @@ func (ce cedarEncryptor) ReadPacket(conn io.ReadWriter) ([]byte, error) {
 	_, err := io.ReadFull(conn, fastCheck)
 	if err != nil {
 		//Early returns cause time-based attack possible. (do not care)
+		//panic("read error at cedarEncryptor.ReadPacket") //for debug
 		return nil, errIllegalPacket
 	}
 
@@ -169,6 +170,7 @@ func (ce cedarEncryptor) ReadPacket(conn io.ReadWriter) ([]byte, error) {
 	//head = ([fake_iv 8B]) [hmac 8B][magic 4B][length 4B]
 	msgCipher.CryptBlocks(fastCheck[FakeIvLength:HeadIvLen], fastCheck[FakeIvLength:HeadIvLen])
 	if string(fastCheck[FakeIvLength+8:FakeIvLength+12]) != magicStr {
+		//panic("cedarEncryptor.ReadPacket failed checking magic string") //for debug
 		return nil, errIllegalPacket
 	}
 
@@ -179,6 +181,7 @@ func (ce cedarEncryptor) ReadPacket(conn io.ReadWriter) ([]byte, error) {
 
 	n, err := io.ReadFull(conn, paddedMsg[HeadIvLen:])
 	if err != nil || n != len(paddedMsg)-HeadIvLen {
+		//panic("cedarEncryptor.ReadPacket failed checking padding") //for debug
 		return nil, errIllegalPacket
 	}
 	msgCipher.CryptBlocks(paddedMsg[HeadIvLen:], paddedMsg[HeadIvLen:])
@@ -192,6 +195,7 @@ func (ce cedarEncryptor) ReadPacket(conn io.ReadWriter) ([]byte, error) {
 	author.Write(paddedMsg)
 	sig := author.Sum(nil)
 	if !hmac.Equal(sig[0:8], transferSig) {
+		//panic("cedarEncryptor.ReadPacket failed checking signature") //for debug
 		return nil, errIllegalPacket
 	}
 
