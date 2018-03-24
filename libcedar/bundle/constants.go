@@ -26,7 +26,7 @@ var errAllocationFailed = errors.New("allocation failed")
 var errAddingFailed = errors.New("adding failed")
 
 const (
-	defaultTimeout     time.Duration = time.Second * 20
+	defaultTimeout     time.Duration = time.Second * 2
 	defaultResend      time.Duration = time.Second * 1
 	defaultConfirmWait time.Duration = time.Millisecond * 10
 )

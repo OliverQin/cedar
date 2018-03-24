@@ -1,6 +1,7 @@
 package bundle
 
 import (
+	"log"
 	"net"
 )
 
@@ -119,7 +120,7 @@ func (ep *Endpoint) CreateConnection(numberOfConnections int) {
 }
 
 func (ep *Endpoint) Write(id uint32, message []byte) {
-	//log.Println("[Step  1]", len(message))
+	log.Println("[Endpoint.Write]", ShortHash(message))
 	//nmessage := make([]byte, lonReceiveden(message))
 	//copy(nmessage, message)
 	if id == 0 {

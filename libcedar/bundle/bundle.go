@@ -3,6 +3,7 @@ package bundle
 import (
 	"encoding/binary"
 	"errors"
+	"log"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -93,6 +94,7 @@ func NewFiberBundle(bufferLen uint32, bundleType string, masterPhrase string) *F
 
 	go ret.keepConfirming()
 	go ret.keepForwarding()
+	go ret.keepDebugging() //TODO: remove this
 
 	return ret
 }
@@ -196,7 +198,7 @@ func (bd *FiberBundle) SendMessage(msg []byte) error {
 	nxt := atomic.AddUint32(&(bd.seqs[upload]), 1) - 1
 	ff.id = nxt
 
-	//log.Println("[Step  2] ff.id", ff.id)
+	log.Println("[Bundle.SendMessage] ", ff.id, ShortHash(msg))
 	go bd.keepSending(ff)
 
 	return nil
@@ -213,11 +215,11 @@ func (bd *FiberBundle) keepSending(ff fiberFrame) {
 	bd.confirmGotLock.Unlock()
 
 	for {
-		//log.Println("Geting fiber", ff.id, len(ff.message), ff.msgType)
 		fb := bd.GetFiberToWrite()
 
-		//log.Println("sending frame:", ff.id, len(ff.message), ff.msgType)
+		log.Println("[Bundle.keepSending.Got]", ff.id)
 		fb.write(ff)
+		log.Println("[Bundle.keepSending.Wrote]", ff.id)
 		//log.Println("[Step  3] ff.id, len(ff.msg), ff.msgType", ff.id, len(ff.message), ff.msgType)
 
 		select {
@@ -234,6 +236,7 @@ func (bd *FiberBundle) keepSending(ff fiberFrame) {
 
 ended:
 	bd.confirmGotLock.Lock()
+	//log.Println("ff.id sent successfully", ff.id)
 	delete(bd.confirmGotSignal, ff.id)
 	close(thisChannel)
 	bd.confirmGotLock.Unlock()
@@ -274,10 +277,19 @@ func (bd *FiberBundle) keepReceiving(fb *fiber) error {
 		}
 
 		if ff.msgType == typeSendData {
-			if !bd.inRange(ff.id) {
+			seqStatus := bd.seqCheck(ff.id)
+			if seqStatus == seqOutOfRange {
+				log.Println("[Bundle.keepReceiving.outOfRange]", ff.id)
 				continue
 			}
-			//log.Println("[Step  4] data rec: id, len(msg)", ff.id, len(ff.message))
+			if seqStatus == seqReceived {
+				//Only send confirm back, not add this buffer
+				bd.confirmLock.Lock()
+				bd.confirmBuffer = append(bd.confirmBuffer, ff.id)
+				bd.confirmLock.Unlock()
+			}
+			//seqStatus == seqInRange
+			log.Println("[Bundle.keepReceiving]", ff.id)
 
 			bd.receiveLock.Lock()
 			bd.receiveBuffer[ff.id] = ff
@@ -322,9 +334,10 @@ func (bd *FiberBundle) keepForwarding() {
 					atomic.AddUint32(&bd.seqs[download], 1)
 					if bd.onReceived != nil {
 						bd.onReceived(bd.id, ff.message)
-						//log.Println("[Step  9] call_bd_onrec", ff.id)
+						log.Println("[keepForwarding]", ff.id)
 					}
 				} else {
+					//log.Println("[Step  9--] waiting for ", seq)
 					break
 				}
 			}
@@ -337,13 +350,16 @@ func (bd *FiberBundle) keepForwarding() {
 	}
 }
 
-func (bd *FiberBundle) inRange(packetId uint32) bool {
-	seqA := atomic.LoadUint32(&bd.seqs[download])
-	seqB := seqA + bd.bufferLen
+func (bd *FiberBundle) keepDebugging() {
+	/*for {
+		select {
+		case <-time.After(time.Second * 1):
+			log.Println("bd", bd.id, "len:", bd.GetSize(), len(bd.sendTokens))
+			//bd.confirmLock
 
-	//log.Println("Range: ", seqA, seqB, packetId, bd.id)
-	if seqA <= seqB {
-		return (seqA <= packetId && packetId < seqB)
-	}
-	return (packetId >= seqA || packetId < seqB)
+		case <-bd.closeChan:
+			bd.closeChan <- empty{}
+			break
+		}
+	}*/
 }

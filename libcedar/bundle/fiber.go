@@ -14,6 +14,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -156,10 +157,10 @@ func (fb *fiber) waitHandshake() (uint32, uint32, uint32, error) {
 
 		var bufBack [12]byte
 		binary.BigEndian.PutUint32(bufBack[:4], id)
-		//seqC2s := uint32(0) //DefaultRNG.Uint32()
-		//seqS2c := uint32(0) //DefaultRNG.Uint32()
-		seqC2s := DefaultRNG.Uint32()
-		seqS2c := DefaultRNG.Uint32()
+		seqC2s := uint32(10000000) //DefaultRNG.Uint32()
+		seqS2c := uint32(20000000) //DefaultRNG.Uint32()
+		//seqC2s := DefaultRNG.Uint32()
+		//seqS2c := DefaultRNG.Uint32()
 
 		binary.BigEndian.PutUint32(bufBack[4:8], seqS2c)
 		binary.BigEndian.PutUint32(bufBack[8:12], seqC2s)
@@ -213,6 +214,10 @@ func (fb *fiber) read() (*fiberFrame, error) {
 	}
 	ret := fb.unpack(msg)
 
+	if ret.msgType == typeSendData {
+		log.Println("[Fiber.read]", ret.id)
+	}
+
 	fb.lastActivityLock.Lock()
 	fb.lastActivity = time.Now()
 	fb.lastActivityLock.Unlock()
@@ -223,6 +228,9 @@ func (fb *fiber) read() (*fiberFrame, error) {
 func (fb *fiber) write(f fiberFrame) error {
 	packed := fb.pack(&f)
 	n, err := fb.enc.WritePacket(fb.conn, packed)
+	if f.msgType == typeSendData {
+		log.Println("[Fiber.write]", f.id)
+	}
 	if n < len(packed) || err != nil {
 		return errFiberWrite
 	}

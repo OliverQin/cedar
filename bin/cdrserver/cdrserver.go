@@ -29,11 +29,15 @@ func RunServer(password string, local string) {
 	serverToSocks := func(id uint32, msg []byte) {
 		//FIXME: id is not used, it's wrong. Now only one-client supported. Currying is needed.
 		//fmt.Println("sv to socks:", len(msg), msg)
-		ssServer.WriteCommand(msg)
+		copiedMsg := make([]byte, len(msg))
+		copy(copiedMsg, msg)
+		ssServer.WriteCommand(copiedMsg)
 	}
 
 	socksToServer := func(msg []byte) error {
-		sv.Write(0, msg)
+		copiedMsg := make([]byte, len(msg))
+		copy(copiedMsg, msg)
+		sv.Write(0, copiedMsg)
 		//fmt.Println("socks to sv", len(msg), msg)
 		return nil
 	}
@@ -46,5 +50,10 @@ func RunServer(password string, local string) {
 }
 
 func main() {
-	RunServer("ggsmd", "127.0.0.1:27968")
+	/*go func() {
+		time.Sleep(20 * time.Second)
+		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+		panic("wwwww")
+	}()*/
+	RunServer("test_password", "127.0.0.1:27968")
 }

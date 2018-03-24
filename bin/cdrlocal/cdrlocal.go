@@ -20,7 +20,7 @@ func PrintUsage() {
 }
 
 func RunLocal(password string, remote string, local string) {
-	Conns := 20
+	Conns := 1
 	BufSize := uint32(500)
 
 	ssClient := socks.NewClient(local)
@@ -28,12 +28,16 @@ func RunLocal(password string, remote string, local string) {
 	clt := bundle.NewEndpoint(BufSize, "client", remote, password)
 
 	remoteToSocks := func(id uint32, msg []byte) {
-		ssClient.WriteCommand(msg)
+		copiedMsg := make([]byte, len(msg))
+		copy(copiedMsg, msg)
+		ssClient.WriteCommand(copiedMsg)
 		//fmt.Println("rmt to socks:", len(msg), msg)
 	}
 
 	socksToRemote := func(msg []byte) error {
-		clt.Write(0, msg)
+		copiedMsg := make([]byte, len(msg))
+		copy(copiedMsg, msg)
+		clt.Write(0, copiedMsg)
 		//fmt.Println("socks to rmt:", len(msg), msg)
 		return nil //TODO: signature not good, add error
 	}
@@ -90,9 +94,16 @@ func main() {
 	fmt.Fprintln(os.Stderr, "Local:", localService)
 	fmt.Fprintln(os.Stderr, "Running...")
 
-	RunLocal(password, remoteService, localService)
+	//RunLocal(password, remoteService, localService)
+	RunLocal("test_password", "127.0.0.1:27968", "127.0.0.1:1082")
 
 	//FIXME: catch os.Signal to exit
+	/*go func() {
+		time.Sleep(20 * time.Second)
+		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+		panic("wwwww")
+	}()*/
+
 	blocker := make(chan int)
 	<-blocker
 }
