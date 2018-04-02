@@ -281,7 +281,7 @@ func (bd *FiberBundle) keepReceiving(fb *fiber) error {
 		ff, err := fb.read()
 
 		if err != nil {
-			//TODO: close
+			panic("keepReceiving failed") //for debug
 			return err
 		}
 
@@ -306,12 +306,13 @@ func (bd *FiberBundle) keepReceiving(fb *fiber) error {
 			bd.receiveBuffer[ff.id] = ff
 			bd.receiveLock.Unlock()
 
+			log.Println("[Bundle.keepReceiving.receiveBufferAdded]", ff.id)
 			bd.receiveChannel <- empty{}
 
 			bd.confirmLock.Lock()
 			bd.confirmBuffer = append(bd.confirmBuffer, ff.id)
 			bd.confirmLock.Unlock()
-			//log.Println("[Step  5] confirming :id, len(msg)", ff.id, len(ff.message))
+			log.Println("[Bundle.keepReceiving.confirmBufferAdded]", ff.id)
 		}
 		if ff.msgType == typeDataReceived {
 			buf := ff.message

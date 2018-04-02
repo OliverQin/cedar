@@ -85,7 +85,7 @@ func TestRealProxy(t *testing.T) {
 	ssServer.OnCommandGenerated = cmdGenSvr
 	ssClient.OnCommandGenerated = cmdGenClt
 
-	bundle.SetGlobalResend(2000 * time.Millisecond)
+	//bundle.SetGlobalResend(2000 * time.Millisecond)
 
 	go StartServer()
 	time.Sleep(500 * time.Millisecond)
@@ -102,5 +102,5 @@ func TestRealProxy(t *testing.T) {
 	for i := 0; i < numOfClients; i++ {
 		<-finishChannel
 	}*/
-	time.Sleep(3000 * time.Second)
+	time.Sleep(30 * time.Second)
 }
