@@ -282,7 +282,6 @@ func (bd *FiberBundle) keepReceiving(fb *fiber) error {
 
 		if err != nil {
 			panic("keepReceiving failed") //for debug
-			return err
 		}
 
 		if ff.msgType == typeSendData {
@@ -293,7 +292,7 @@ func (bd *FiberBundle) keepReceiving(fb *fiber) error {
 			}
 			if seqStatus == seqReceived {
 				//Only send confirm back, not add this buffer
-				log.Println("[Bundle.keepReceiving.seqReceived]", ff.id)
+				log.Println("[Bundle.keepReceiving.dupSeqReceived]", ff.id)
 				bd.confirmLock.Lock()
 				bd.confirmBuffer = append(bd.confirmBuffer, ff.id)
 				bd.confirmLock.Unlock()
