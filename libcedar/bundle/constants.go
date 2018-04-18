@@ -28,7 +28,7 @@ var errAddingFailed = errors.New("adding failed")
 const (
 	defaultTimeout     time.Duration = time.Second * 40 / 10
 	defaultResend      time.Duration = time.Second * 5 / 10
-	defaultConfirmWait time.Duration = time.Microsecond * 1000
+	defaultConfirmWait time.Duration = time.Millisecond * 20
 )
 
 var globalTimeout = defaultTimeout
