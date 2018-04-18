@@ -219,7 +219,7 @@ It ends until message is sent and confirmed.
 */
 func (bd *FiberBundle) keepSending(ff fiberFrame) {
 	bd.confirmGotLock.Lock()
-	bd.confirmGotSignal[ff.id] = make(chan empty, 1000) //TODO: fix this
+	bd.confirmGotSignal[ff.id] = make(chan empty, 1)
 	thisChannel := bd.confirmGotSignal[ff.id]
 	bd.confirmGotLock.Unlock()
 
@@ -317,8 +317,14 @@ func (bd *FiberBundle) keepReceiving(fb *fiber) error {
 			buf := ff.message
 
 			bd.confirmGotLock.Lock()
+			dupIds := make(map[uint32]bool)
 			for i := 0; i < len(buf); i += 4 {
 				id := binary.BigEndian.Uint32(buf[i : i+4])
+				_, found := dupIds[id]
+				if found {
+					continue
+				}
+				dupIds[id] = true
 				log.Println("[Bundle.keepReceiving.confirmReceived]", id)
 				chn, ok := bd.confirmGotSignal[id]
 				if ok {
