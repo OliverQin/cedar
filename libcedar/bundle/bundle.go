@@ -219,7 +219,7 @@ It ends until message is sent and confirmed.
 */
 func (bd *FiberBundle) keepSending(ff fiberFrame) {
 	bd.confirmGotLock.Lock()
-	bd.confirmGotSignal[ff.id] = make(chan empty, 1)
+	bd.confirmGotSignal[ff.id] = make(chan empty, 1000) //TODO: fix this
 	thisChannel := bd.confirmGotSignal[ff.id]
 	bd.confirmGotLock.Unlock()
 
@@ -268,7 +268,7 @@ func (bd *FiberBundle) keepConfirming() {
 
 		if len(info) > 0 {
 			fb.write(fiberFrame{info, typeDataReceived, 0})
-			//log.Println(time.Now(), &fb)
+			log.Println(time.Now(), "=============", len(info))
 		}
 
 		time.Sleep(globalConfirmWait)
