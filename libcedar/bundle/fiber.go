@@ -15,7 +15,6 @@ import (
 	"errors"
 	"io"
 	"log"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -35,8 +34,8 @@ type fiber struct {
 	conn rwcDeadliner
 	enc  encryptor
 
-	lastActivity     time.Time
-	lastActivityLock sync.Mutex
+	lastReadTime  int64
+	lastWriteTime int64
 
 	activated uint32
 	ended     chan error
@@ -44,16 +43,18 @@ type fiber struct {
 
 var errFiberWrite = errors.New("fiber fails during writing")
 var errFiberRead = errors.New("fiber fails during reading")
+var errFiberTimeout = errors.New("fiber timeout")
 
-func newFiber(conn rwcDeadliner, key encryptionKey) *fiber {
+func newFiber(conn rwcDeadliner, key *encryptionKey) *fiber {
 	ret := new(fiber)
 	ret.conn = conn
-	ret.ended = make(chan error, 1) //TODO: use this
+	ret.ended = make(chan error, 0xffffff) //TODO: use this
 
-	ret.lastActivity = time.Now()
+	ret.lastReadTime = time.Now().Unix()
+	ret.lastWriteTime = time.Now().Unix()
 
 	newKey := key
-	ret.enc = &cedarEncryptor{&newKey, nil}
+	ret.enc = &cedarEncryptor{newKey, nil}
 
 	ret.activated = 0
 
@@ -64,16 +65,17 @@ func (fb *fiber) keepHeartbeating() {
 	for {
 		select {
 		case err := <-fb.ended:
-			fb.ended <- err
-			fb.conn.Close()
+			fb.close(err)
 			return
 		case t := <-time.After(globalResend):
-			fb.lastActivityLock.Lock()
-			nt := fb.lastActivity.Add(globalResend) //TODO: add randomness
-			fb.lastActivity = time.Now()
-			fb.lastActivityLock.Unlock()
+			nrt := atomic.LoadInt64(&fb.lastReadTime) + int64(globalCleanup/time.Second)
+			if nrt <= t.Unix() {
+				fb.close(errFiberTimeout)
+				return
+			}
 
-			if nt.Before(t) {
+			nwt := atomic.LoadInt64(&fb.lastWriteTime) + int64(globalResend/time.Second) //TODO: add randomness
+			if nwt <= t.Unix() {
 				fb.sendHeartbeat()
 				//log.Println(nt, t, "heartbeat", &fb)
 			}
@@ -81,8 +83,8 @@ func (fb *fiber) keepHeartbeating() {
 	}
 }
 
-func (fb *fiber) sendHeartbeat() {
-	fb.write(fiberFrame{nil, typeHeartbeat, 0})
+func (fb *fiber) sendHeartbeat() error {
+	return fb.write(fiberFrame{nil, typeHeartbeat, 0})
 }
 
 /*
@@ -210,7 +212,7 @@ func (fb *fiber) read() (*fiberFrame, error) {
 	msg, err := fb.enc.ReadPacket(fb.conn)
 
 	if err != nil {
-		panic("read error should not happen") //for debug
+		//panic("read error should not happen") //for debug
 		return nil, errFiberRead
 	}
 	ret := fb.unpack(msg)
@@ -219,9 +221,7 @@ func (fb *fiber) read() (*fiberFrame, error) {
 		log.Println("[Fiber.read]", ret.id)
 	}
 
-	fb.lastActivityLock.Lock()
-	fb.lastActivity = time.Now()
-	fb.lastActivityLock.Unlock()
+	atomic.StoreInt64(&fb.lastReadTime, time.Now().Unix())
 
 	return ret, nil
 }
@@ -233,13 +233,11 @@ func (fb *fiber) write(f fiberFrame) error {
 		log.Println("[Fiber.write]", f.id)
 	}
 	if n < len(packed) || err != nil {
-		panic("write error should not happen") //for debug
+		//panic("write error should not happen") //for debug
 		return errFiberWrite
 	}
 
-	fb.lastActivityLock.Lock()
-	fb.lastActivity = time.Now()
-	fb.lastActivityLock.Unlock()
+	atomic.StoreInt64(&fb.lastWriteTime, time.Now().Unix())
 
 	return nil
 }
@@ -247,12 +245,15 @@ func (fb *fiber) write(f fiberFrame) error {
 func (fb *fiber) activate() {
 	if atomic.AddUint32(&fb.activated, 1) == 1 {
 		go fb.keepHeartbeating()
-	} else {
-		panic("activate should be not called twice")
 	}
+	//else {
+	// 	panic("activate should be not called twice")
+	//}
 }
 
 func (fb *fiber) close(err error) {
 	fb.ended <- err
 	fb.conn.Close()
+	atomic.AddUint32(&fb.activated, 0xf) //TODO: dirty, fix this
+	log.Println("[Fiber.close]", fb)
 }

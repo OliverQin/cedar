@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"time"
 )
 
 type Endpoint struct {
@@ -35,6 +36,7 @@ func NewEndpoint(bufferLen uint32, endpointType string, addr string, password st
 	//type FuncDataReceived func(id uint32, message []byte)
 	//n.onReceived = (*FuncDataReceived)(&callback)
 
+	go n.keepCleaning()
 	return n
 }
 
@@ -88,6 +90,24 @@ func (ep *Endpoint) ServerStart() {
 				}
 			}
 		}
+	}
+}
+
+func (ep *Endpoint) keepCleaning() {
+	if ep.endpointType != "server" {
+		return
+	}
+
+	for {
+		ep.mbdLock.Lock()
+		for i, v := range ep.bundles {
+			if v.CloseIfAllFibersClosed() {
+				delete(ep.bundles, i)
+			}
+		}
+		ep.mbdLock.Unlock()
+
+		time.Sleep(60 * time.Second)
 	}
 }
 

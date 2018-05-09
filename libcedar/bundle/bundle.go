@@ -19,10 +19,11 @@ type empty struct{}
 var errUnexpectedRequest = errors.New("unexpected request")
 
 type FiberBundle struct {
-	bundleType uint32
-	id         uint32
-	seqs       [2]uint32
-	next       uint32
+	bundleType  uint32
+	timeCreated int64
+	id          uint32
+	seqs        [2]uint32
+	next        uint32
 
 	fibersLock sync.RWMutex
 	fibers     []*fiber
@@ -97,7 +98,42 @@ func NewFiberBundle(bufferLen uint32, bundleType string, masterPhrase string) *F
 	go ret.keepForwarding()
 	go ret.keepDebugging() //TODO: remove this
 
+	ret.timeCreated = time.Now().Unix()
+
 	return ret
+}
+
+/*
+CloseIfAllFibersClosed check if all fibers dead;
+If all fibers dead, it closes this bundle, return true;
+Otherwise, return false.
+*/
+func (bd *FiberBundle) CloseIfAllFibersClosed() bool {
+	if (time.Now().Unix() - bd.timeCreated) < 180 {
+		return false
+	}
+
+	var counter = 0
+	bd.fibersLock.Lock()
+	for i := 0; i < len(bd.fibers); i++ {
+		if atomic.LoadUint32(&(bd.fibers[i].activated)) >= 0xf {
+			bd.fibers[i] = bd.fibers[i-1]
+			i--
+		} else {
+			counter++
+		}
+	}
+	if counter < len(bd.fibers) {
+		bd.fibers = bd.fibers[0:counter]
+	}
+	bd.fibersLock.Unlock()
+	if counter > 0 {
+		return false
+	}
+
+	log.Println("[Bundle.CloseIfAllFibersClosed", bd.id)
+	bd.closeChan <- empty{}
+	return true
 }
 
 func (bd *FiberBundle) SetOnReceived(f FuncDataReceived) {
@@ -138,7 +174,7 @@ It returns (0, errCode) at failure.
 */
 func (bd *FiberBundle) addConnection(conn rwcDeadliner) (uint32, *fiber, error) {
 	//FIXME: this ugly signature is a work around
-	fb := newFiber(conn, bd.keys)
+	fb := newFiber(conn, &bd.keys)
 
 	var err error
 	var id, c2s, s2c uint32
@@ -168,7 +204,7 @@ func (bd *FiberBundle) addConnection(conn rwcDeadliner) (uint32, *fiber, error) 
 }
 
 func (bd *FiberBundle) addAndReceive(fb *fiber) {
-	//fb := newFiber(conn, bd.keys)
+	//fb := newFiber(conn, &bd.keys)
 	bd.fibersLock.Lock()
 	bd.fibers = append(bd.fibers, fb)
 	bd.fibersLock.Unlock()
@@ -219,7 +255,8 @@ It ends until message is sent and confirmed.
 */
 func (bd *FiberBundle) keepSending(ff fiberFrame) {
 	bd.confirmGotLock.Lock()
-	bd.confirmGotSignal[ff.id] = make(chan empty, 1)
+	//TODO: length 1 channel should be OK but failed sometimes, hard to reproduce
+	bd.confirmGotSignal[ff.id] = make(chan empty, 0xf00beef)
 	thisChannel := bd.confirmGotSignal[ff.id]
 	bd.confirmGotLock.Unlock()
 
@@ -281,7 +318,8 @@ func (bd *FiberBundle) keepReceiving(fb *fiber) error {
 		ff, err := fb.read()
 
 		if err != nil {
-			panic("keepReceiving failed") //for debug
+			// panic("keepReceiving failed") //for debug
+			return err
 		}
 
 		if ff.msgType == typeSendData {
