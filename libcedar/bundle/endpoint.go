@@ -101,6 +101,9 @@ func (ep *Endpoint) keepCleaning() {
 	for {
 		ep.mbdLock.Lock()
 		for i, v := range ep.bundles {
+			if i == 0 {
+				continue
+			}
 			if v.CloseIfAllFibersClosed() {
 				delete(ep.bundles, i)
 			}

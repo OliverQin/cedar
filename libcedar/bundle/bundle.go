@@ -117,14 +117,12 @@ func (bd *FiberBundle) CloseIfAllFibersClosed() bool {
 	bd.fibersLock.Lock()
 	for i := 0; i < len(bd.fibers); i++ {
 		if atomic.LoadUint32(&(bd.fibers[i].activated)) >= 0xf {
-			bd.fibers[i] = bd.fibers[i-1]
+			bd.fibers[i] = bd.fibers[len(bd.fibers)-1]
+			bd.fibers = bd.fibers[0 : len(bd.fibers)-1]
 			i--
 		} else {
 			counter++
 		}
-	}
-	if counter < len(bd.fibers) {
-		bd.fibers = bd.fibers[0:counter]
 	}
 	bd.fibersLock.Unlock()
 	if counter > 0 {
