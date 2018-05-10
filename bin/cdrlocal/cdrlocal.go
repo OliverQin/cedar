@@ -21,7 +21,7 @@ func PrintUsage() {
 
 func RunLocal(password string, remote string, local string) {
 	Conns := 1
-	BufSize := uint32(500)
+	BufSize := uint32(100)
 
 	ssClient := socks.NewClient(local)
 
@@ -94,8 +94,8 @@ func main() {
 	fmt.Fprintln(os.Stderr, "Local:", localService)
 	fmt.Fprintln(os.Stderr, "Running...")
 
-	//RunLocal(password, remoteService, localService)
-	RunLocal("test_password", "127.0.0.1:27968", "127.0.0.1:1082")
+	RunLocal(password, remoteService, localService)
+	//RunLocal("test_password", "127.0.0.1:27968", "127.0.0.1:1082")
 
 	//FIXME: catch os.Signal to exit
 	/*go func() {
