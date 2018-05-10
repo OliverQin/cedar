@@ -76,8 +76,8 @@ func (ep *Endpoint) ServerStart() {
 				ep.bundles[0].seqs[upload] = 0
 
 			} else {
-				ep.bundles[id] = bd
 				ep.mbdLock.Lock()
+				ep.bundles[id] = bd
 				ep.mbd = bd
 				ep.mbdLock.Unlock()
 				ep.mbd.SetOnReceived(ep.onReceived)
