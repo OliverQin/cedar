@@ -2,6 +2,7 @@ package bundle
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"testing"
 )
@@ -14,8 +15,9 @@ func TestCedarEncryptor(t *testing.T) {
 	ssKey := cedarKdf{}.generate("gg", "session", 512)
 
 	for r := 0; r < 20; r++ {
-		for i := 0; i < 65; i++ {
+		for i := 5; i < 65; i++ {
 			msg := make([]byte, i)
+			fmt.Println(i, r)
 			DefaultRNG.Read(msg)
 
 			encryptor.sessionKey = nil

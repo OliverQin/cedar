@@ -28,7 +28,7 @@ func (f *pseudoRandomFile) Read(buf []byte) {
 	}
 }
 
-const serverAddr = "127.0.0.1:64338"
+const serverAddr = "127.0.0.1:64337"
 const proxyAddr = "127.0.0.1:1082"
 
 var ssServer = socks.NewServer()
@@ -102,5 +102,5 @@ func TestRealProxy(t *testing.T) {
 	for i := 0; i < numOfClients; i++ {
 		<-finishChannel
 	}*/
-	time.Sleep(30 * time.Second)
+	time.Sleep(10 * time.Second)
 }
