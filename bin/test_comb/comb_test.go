@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"testing"
 	"time"
 
 	"github.com/OliverQin/cedar/libcedar/bundle"
@@ -78,29 +77,29 @@ func (writer logWriter) Write(bytes []byte) (int, error) {
 	return fmt.Printf("%.5f [Debug] %s", float64(time.Now().UnixNano())/1e9, bytes)
 }
 
-func TestRealProxy(t *testing.T) {
-	log.SetFlags(0)
-	log.SetOutput(new(logWriter))
+/*func TestRealProxy(t *testing.T) {
+log.SetFlags(0)
+log.SetOutput(new(logWriter))
 
-	ssServer.OnCommandGenerated = cmdGenSvr
-	ssClient.OnCommandGenerated = cmdGenClt
+ssServer.OnCommandGenerated = cmdGenSvr
+ssClient.OnCommandGenerated = cmdGenClt
 
-	//bundle.SetGlobalResend(2000 * time.Millisecond)
+//bundle.SetGlobalResend(2000 * time.Millisecond)
 
-	go StartServer()
-	time.Sleep(500 * time.Millisecond)
+go StartServer()
+time.Sleep(500 * time.Millisecond)
 
-	go StartClient()
-	time.Sleep(500 * time.Millisecond)
+go StartClient()
+time.Sleep(500 * time.Millisecond)
 
-	ssClient.StartAsync()
+ssClient.StartAsync()
 
-	/*for i := 0; i < numOfClients; i++ {
-		<-finishChannel
-	}
-	serverSend <- 1
-	for i := 0; i < numOfClients; i++ {
-		<-finishChannel
-	}*/
-	time.Sleep(10 * time.Second)
+/*for i := 0; i < numOfClients; i++ {
+	<-finishChannel
 }
+serverSend <- 1
+for i := 0; i < numOfClients; i++ {
+	<-finishChannel
+}*/
+//	time.Sleep(10 * time.Second)
+//}

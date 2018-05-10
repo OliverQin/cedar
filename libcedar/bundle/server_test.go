@@ -6,7 +6,6 @@ import (
 	"hash"
 	"log"
 	"sync"
-	"testing"
 	"time"
 )
 
@@ -142,7 +141,7 @@ func StartClient() {
 	time.Sleep(time.Millisecond * 500)
 }
 
-func TestMultiClientLoopback(t *testing.T) {
+/*func TestMultiClientLoopback(t *testing.T) {
 	SetGlobalResend(2000 * time.Millisecond)
 
 	go StartServer()
@@ -157,4 +156,4 @@ func TestMultiClientLoopback(t *testing.T) {
 	for i := 0; i < numOfClients; i++ {
 		<-finishChannel
 	}
-}
+}*/
