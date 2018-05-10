@@ -86,7 +86,7 @@ func NewFiberBundle(bufferLen uint32, bundleType string, masterPhrase string) *F
 	ret.sendTokens = make(chan empty, bufferLen)
 	//ret.sendBuffer = make(map[uint32]*fiberFrame)
 
-	ret.closeChan = make(chan empty, 4)
+	ret.closeChan = make(chan empty, 0xff) //TODO: fix size here
 
 	ret.confirmBuffer = make([]uint32, 0, bufferLen+1)
 
@@ -129,7 +129,7 @@ func (bd *FiberBundle) CloseIfAllFibersClosed() bool {
 		return false
 	}
 
-	log.Println("[Bundle.CloseIfAllFibersClosed", bd.id)
+	log.Println("[Bundle.CloseIfAllFibersClosed]", bd.id)
 	bd.closeChan <- empty{}
 	return true
 }
@@ -222,7 +222,15 @@ func (bd *FiberBundle) GetFiberToWrite() *fiber {
 		//log.Println("bundle id:", bd.id, "size:", x)
 		if x == 0 {
 			bd.fibersLock.Unlock()
-			time.Sleep(time.Millisecond * 1000) //0.1s, wait until there is one connection
+
+			select {
+			case <-bd.closeChan:
+				bd.closeChan <- empty{}
+				log.Println("[Bundle.GetFiberToWrite] closeChan got")
+				return nil
+			case <-time.After(time.Second * 1): //1s, wait until there is one connection
+				continue
+			}
 		} else {
 			break
 		}
@@ -260,6 +268,9 @@ func (bd *FiberBundle) keepSending(ff fiberFrame) {
 
 	for {
 		fb := bd.GetFiberToWrite()
+		if fb == nil {
+			goto ended
+		}
 
 		log.Println("[Bundle.keepSending.Got]", ff.id)
 		fb.write(ff)
@@ -274,6 +285,7 @@ func (bd *FiberBundle) keepSending(ff fiberFrame) {
 			goto ended
 		case <-bd.closeChan:
 			bd.closeChan <- empty{}
+			log.Println("[Bundle.keepSending] closeChan got")
 			goto ended
 		}
 	}
@@ -291,6 +303,9 @@ ended:
 func (bd *FiberBundle) keepConfirming() {
 	for {
 		fb := bd.GetFiberToWrite()
+		if fb == nil {
+			return
+		}
 
 		bd.confirmLock.Lock()
 		info := make([]byte, len(bd.confirmBuffer)*4)
@@ -400,21 +415,12 @@ func (bd *FiberBundle) keepForwarding() {
 
 		case <-bd.closeChan:
 			bd.closeChan <- empty{}
-			break
+			log.Println("[Bundle.keepForwarding] closeChan got")
+			return
 		}
 	}
 }
 
 func (bd *FiberBundle) keepDebugging() {
-	/*for {
-		select {
-		case <-time.After(time.Second * 1):
-			log.Println("bd", bd.id, "len:", bd.GetSize(), len(bd.sendTokens))
-			//bd.confirmLock
 
-		case <-bd.closeChan:
-			bd.closeChan <- empty{}
-			break
-		}
-	}*/
 }

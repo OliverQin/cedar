@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime/pprof"
+	"time"
 
 	"github.com/OliverQin/cedar/libcedar/bundle"
 	"github.com/OliverQin/cedar/libcedar/socks"
@@ -55,5 +57,10 @@ func main() {
 		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 		panic("wwwww")
 	}()*/
+	go func() {
+		time.Sleep(400 * time.Second)
+		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+		panic("stop")
+	}()
 	RunServer("test_password", "127.0.0.1:27968")
 }
