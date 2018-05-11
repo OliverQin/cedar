@@ -26,14 +26,15 @@ var errAllocationFailed = errors.New("allocation failed")
 var errAddingFailed = errors.New("adding failed")
 
 const (
-	defaultTimeout     time.Duration = time.Second * 20
-	defaultResend      time.Duration = time.Second * 1
+	defaultTimeout     time.Duration = time.Second * 40
+	defaultResend      time.Duration = time.Second * 12
 	defaultConfirmWait time.Duration = time.Millisecond * 10
 )
 
-var globalTimeout time.Duration = defaultTimeout
-var globalResend time.Duration = defaultResend
-var globalConfirmWait time.Duration = defaultConfirmWait
+var globalTimeout = defaultTimeout
+var globalResend = defaultResend
+var globalConfirmWait = defaultConfirmWait
+var globalCleanup = defaultTimeout * 5
 
 const (
 	serverBundle uint32 = 1
@@ -45,6 +46,7 @@ func SetGlobalTimeout(duration time.Duration) {
 		duration = 3600 * time.Second //one hour
 	}
 	globalTimeout = duration
+	globalCleanup = globalTimeout * 5
 }
 
 func SetGlobalResend(duration time.Duration) {

@@ -3,6 +3,7 @@ package bundle
 import (
 	"encoding/binary"
 	"errors"
+	"log"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,10 +19,11 @@ type empty struct{}
 var errUnexpectedRequest = errors.New("unexpected request")
 
 type FiberBundle struct {
-	bundleType uint32
-	id         uint32
-	seqs       [2]uint32
-	next       uint32
+	bundleType  uint32
+	timeCreated int64
+	id          uint32
+	seqs        [2]uint32
+	next        uint32
 
 	fibersLock sync.RWMutex
 	fibers     []*fiber
@@ -45,6 +47,7 @@ type FiberBundle struct {
 	confirmGotSignal map[uint32]chan empty
 	confirmGotLock   sync.RWMutex
 
+	callbackLock    sync.RWMutex
 	onBundleCreated FuncBundleCreated
 	onReceived      FuncDataReceived
 	onFiberLost     FuncFiberLost
@@ -83,7 +86,7 @@ func NewFiberBundle(bufferLen uint32, bundleType string, masterPhrase string) *F
 	ret.sendTokens = make(chan empty, bufferLen)
 	//ret.sendBuffer = make(map[uint32]*fiberFrame)
 
-	ret.closeChan = make(chan empty, 4)
+	ret.closeChan = make(chan empty, 0xff) //TODO: fix size here
 
 	ret.confirmBuffer = make([]uint32, 0, bufferLen+1)
 
@@ -93,24 +96,66 @@ func NewFiberBundle(bufferLen uint32, bundleType string, masterPhrase string) *F
 
 	go ret.keepConfirming()
 	go ret.keepForwarding()
+	go ret.keepDebugging() //TODO: remove this
+
+	ret.timeCreated = time.Now().Unix()
 
 	return ret
 }
 
+/*
+CloseIfAllFibersClosed check if all fibers dead;
+If all fibers dead, it closes this bundle, return true;
+Otherwise, return false.
+*/
+func (bd *FiberBundle) CloseIfAllFibersClosed() bool {
+	if (time.Now().Unix() - bd.timeCreated) < 180 {
+		return false
+	}
+
+	var counter = 0
+	bd.fibersLock.Lock()
+	for i := 0; i < len(bd.fibers); i++ {
+		if atomic.LoadUint32(&(bd.fibers[i].activated)) >= 0xf {
+			bd.fibers[i] = bd.fibers[len(bd.fibers)-1]
+			bd.fibers = bd.fibers[0 : len(bd.fibers)-1]
+			i--
+		} else {
+			counter++
+		}
+	}
+	bd.fibersLock.Unlock()
+	if counter > 0 {
+		return false
+	}
+
+	log.Println("[Bundle.CloseIfAllFibersClosed]", bd.id)
+	bd.closeChan <- empty{}
+	return true
+}
+
 func (bd *FiberBundle) SetOnReceived(f FuncDataReceived) {
+	bd.callbackLock.Lock()
 	bd.onReceived = f
+	bd.callbackLock.Unlock()
 }
 
 func (bd *FiberBundle) SetOnFiberLost(f FuncFiberLost) {
+	bd.callbackLock.Lock()
 	bd.onFiberLost = f
+	bd.callbackLock.Unlock()
 }
 
 func (bd *FiberBundle) SetOnBundleLost(f FuncBundleLost) {
+	bd.callbackLock.Lock()
 	bd.onBundleLost = f
+	bd.callbackLock.Unlock()
 }
 
 func (bd *FiberBundle) SetOnBundleCreated(f FuncBundleCreated) {
+	bd.callbackLock.Lock()
 	bd.onBundleCreated = f
+	bd.callbackLock.Unlock()
 }
 
 func (bd *FiberBundle) GetSize() int {
@@ -127,7 +172,7 @@ It returns (0, errCode) at failure.
 */
 func (bd *FiberBundle) addConnection(conn rwcDeadliner) (uint32, *fiber, error) {
 	//FIXME: this ugly signature is a work around
-	fb := newFiber(conn, bd.keys)
+	fb := newFiber(conn, &bd.keys)
 
 	var err error
 	var id, c2s, s2c uint32
@@ -157,7 +202,7 @@ func (bd *FiberBundle) addConnection(conn rwcDeadliner) (uint32, *fiber, error) 
 }
 
 func (bd *FiberBundle) addAndReceive(fb *fiber) {
-	//fb := newFiber(conn, bd.keys)
+	//fb := newFiber(conn, &bd.keys)
 	bd.fibersLock.Lock()
 	bd.fibers = append(bd.fibers, fb)
 	bd.fibersLock.Unlock()
@@ -177,7 +222,15 @@ func (bd *FiberBundle) GetFiberToWrite() *fiber {
 		//log.Println("bundle id:", bd.id, "size:", x)
 		if x == 0 {
 			bd.fibersLock.Unlock()
-			time.Sleep(time.Millisecond * 1000) //0.1s, wait until there is one connection
+
+			select {
+			case <-bd.closeChan:
+				bd.closeChan <- empty{}
+				log.Println("[Bundle.GetFiberToWrite] closeChan got")
+				return nil
+			case <-time.After(time.Second * 1): //1s, wait until there is one connection
+				continue
+			}
 		} else {
 			break
 		}
@@ -196,7 +249,7 @@ func (bd *FiberBundle) SendMessage(msg []byte) error {
 	nxt := atomic.AddUint32(&(bd.seqs[upload]), 1) - 1
 	ff.id = nxt
 
-	//log.Println("[Step  2] ff.id", ff.id)
+	log.Println("[Bundle.SendMessage] ", ff.id, ShortHash(msg))
 	go bd.keepSending(ff)
 
 	return nil
@@ -208,16 +261,20 @@ It ends until message is sent and confirmed.
 */
 func (bd *FiberBundle) keepSending(ff fiberFrame) {
 	bd.confirmGotLock.Lock()
-	bd.confirmGotSignal[ff.id] = make(chan empty, 1)
+	//TODO: length 1 channel should be OK but failed sometimes, hard to reproduce
+	bd.confirmGotSignal[ff.id] = make(chan empty, 0xf00beef)
 	thisChannel := bd.confirmGotSignal[ff.id]
 	bd.confirmGotLock.Unlock()
 
 	for {
-		//log.Println("Geting fiber", ff.id, len(ff.message), ff.msgType)
 		fb := bd.GetFiberToWrite()
+		if fb == nil {
+			goto ended
+		}
 
-		//log.Println("sending frame:", ff.id, len(ff.message), ff.msgType)
+		log.Println("[Bundle.keepSending.Got]", ff.id)
 		fb.write(ff)
+		log.Println("[Bundle.keepSending.Wrote]", ff.id)
 		//log.Println("[Step  3] ff.id, len(ff.msg), ff.msgType", ff.id, len(ff.message), ff.msgType)
 
 		select {
@@ -228,12 +285,14 @@ func (bd *FiberBundle) keepSending(ff fiberFrame) {
 			goto ended
 		case <-bd.closeChan:
 			bd.closeChan <- empty{}
+			log.Println("[Bundle.keepSending] closeChan got")
 			goto ended
 		}
 	}
 
 ended:
 	bd.confirmGotLock.Lock()
+	//log.Println("ff.id sent successfully", ff.id)
 	delete(bd.confirmGotSignal, ff.id)
 	close(thisChannel)
 	bd.confirmGotLock.Unlock()
@@ -244,19 +303,22 @@ ended:
 func (bd *FiberBundle) keepConfirming() {
 	for {
 		fb := bd.GetFiberToWrite()
+		if fb == nil {
+			return
+		}
 
 		bd.confirmLock.Lock()
 		info := make([]byte, len(bd.confirmBuffer)*4)
 		for i := 0; i < len(info); i += 4 {
 			binary.BigEndian.PutUint32(info[i:i+4], bd.confirmBuffer[i/4])
-			//log.Println("[Step  6] Sending confirm :id", bd.confirmBuffer[i/4])
+			log.Println("[keepConfirming.confirmSent]", bd.confirmBuffer[i/4])
 		}
 		bd.confirmBuffer = bd.confirmBuffer[:0]
 		bd.confirmLock.Unlock()
 
 		if len(info) > 0 {
 			fb.write(fiberFrame{info, typeDataReceived, 0})
-			//log.Println(time.Now(), &fb)
+			log.Println(time.Now(), "=============", len(info))
 		}
 
 		time.Sleep(globalConfirmWait)
@@ -269,34 +331,52 @@ func (bd *FiberBundle) keepReceiving(fb *fiber) error {
 		ff, err := fb.read()
 
 		if err != nil {
-			//TODO: close
+			// panic("keepReceiving failed") //for debug
 			return err
 		}
 
 		if ff.msgType == typeSendData {
-			if !bd.inRange(ff.id) {
+			seqStatus := bd.seqCheck(ff.id)
+			if seqStatus == seqOutOfRange {
+				log.Println("[Bundle.keepReceiving.outOfRange]", ff.id)
 				continue
 			}
-			//log.Println("[Step  4] data rec: id, len(msg)", ff.id, len(ff.message))
+			if seqStatus == seqReceived {
+				//Only send confirm back, not add this buffer
+				log.Println("[Bundle.keepReceiving.dupSeqReceived]", ff.id)
+				bd.confirmLock.Lock()
+				bd.confirmBuffer = append(bd.confirmBuffer, ff.id)
+				bd.confirmLock.Unlock()
+				continue
+			}
+			//seqStatus == seqInRange
+			log.Println("[Bundle.keepReceiving]", ff.id)
 
 			bd.receiveLock.Lock()
 			bd.receiveBuffer[ff.id] = ff
 			bd.receiveLock.Unlock()
 
+			log.Println("[Bundle.keepReceiving.receiveBufferAdded]", ff.id)
 			bd.receiveChannel <- empty{}
 
 			bd.confirmLock.Lock()
 			bd.confirmBuffer = append(bd.confirmBuffer, ff.id)
 			bd.confirmLock.Unlock()
-			//log.Println("[Step  5] confirming :id, len(msg)", ff.id, len(ff.message))
+			log.Println("[Bundle.keepReceiving.confirmBufferAdded]", ff.id)
 		}
 		if ff.msgType == typeDataReceived {
 			buf := ff.message
 
 			bd.confirmGotLock.Lock()
+			dupIds := make(map[uint32]bool)
 			for i := 0; i < len(buf); i += 4 {
 				id := binary.BigEndian.Uint32(buf[i : i+4])
-				//log.Println("[Step  7] confirm got", id)
+				_, found := dupIds[id]
+				if found {
+					continue
+				}
+				dupIds[id] = true
+				log.Println("[Bundle.keepReceiving.confirmReceived]", id)
 				chn, ok := bd.confirmGotSignal[id]
 				if ok {
 					chn <- empty{}
@@ -320,11 +400,14 @@ func (bd *FiberBundle) keepForwarding() {
 				//log.Println("seq, status", seq, ok)
 				if ok {
 					atomic.AddUint32(&bd.seqs[download], 1)
+					bd.callbackLock.RLock()
 					if bd.onReceived != nil {
 						bd.onReceived(bd.id, ff.message)
-						//log.Println("[Step  9] call_bd_onrec", ff.id)
+						log.Println("[keepForwarding]", ff.id)
 					}
+					bd.callbackLock.RUnlock()
 				} else {
+					//log.Println("[Step  9--] waiting for ", seq)
 					break
 				}
 			}
@@ -332,18 +415,12 @@ func (bd *FiberBundle) keepForwarding() {
 
 		case <-bd.closeChan:
 			bd.closeChan <- empty{}
-			break
+			log.Println("[Bundle.keepForwarding] closeChan got")
+			return
 		}
 	}
 }
 
-func (bd *FiberBundle) inRange(packetId uint32) bool {
-	seqA := atomic.LoadUint32(&bd.seqs[download])
-	seqB := seqA + bd.bufferLen
+func (bd *FiberBundle) keepDebugging() {
 
-	//log.Println("Range: ", seqA, seqB, packetId, bd.id)
-	if seqA <= seqB {
-		return (seqA <= packetId && packetId < seqB)
-	}
-	return (packetId >= seqA || packetId < seqB)
 }

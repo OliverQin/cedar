@@ -1,7 +1,10 @@
 package bundle
 
 import (
+	"log"
 	"net"
+	"sync"
+	"time"
 )
 
 type Endpoint struct {
@@ -11,7 +14,8 @@ type Endpoint struct {
 	addr         string
 	endpointType string
 
-	mbd *FiberBundle
+	mbd     *FiberBundle
+	mbdLock sync.RWMutex
 
 	onReceived FuncDataReceived
 }
@@ -32,6 +36,7 @@ func NewEndpoint(bufferLen uint32, endpointType string, addr string, password st
 	//type FuncDataReceived func(id uint32, message []byte)
 	//n.onReceived = (*FuncDataReceived)(&callback)
 
+	go n.keepCleaning()
 	return n
 }
 
@@ -71,8 +76,10 @@ func (ep *Endpoint) ServerStart() {
 				ep.bundles[0].seqs[upload] = 0
 
 			} else {
+				ep.mbdLock.Lock()
 				ep.bundles[id] = bd
 				ep.mbd = bd
+				ep.mbdLock.Unlock()
 				ep.mbd.SetOnReceived(ep.onReceived)
 
 				bd.addAndReceive(fb)
@@ -83,6 +90,27 @@ func (ep *Endpoint) ServerStart() {
 				}
 			}
 		}
+	}
+}
+
+func (ep *Endpoint) keepCleaning() {
+	if ep.endpointType != "server" {
+		return
+	}
+
+	for {
+		ep.mbdLock.Lock()
+		for i, v := range ep.bundles {
+			if i == 0 {
+				continue
+			}
+			if v.CloseIfAllFibersClosed() {
+				delete(ep.bundles, i)
+			}
+		}
+		ep.mbdLock.Unlock()
+
+		time.Sleep(60 * time.Second)
 	}
 }
 
@@ -109,7 +137,9 @@ func (ep *Endpoint) CreateConnection(numberOfConnections int) {
 		bd.addAndReceive(fb)
 
 		ep.bundles[bd.id] = bd
+		ep.mbdLock.Lock()
 		ep.mbd = ep.bundles[bd.id]
+		ep.mbdLock.Unlock()
 		ep.mbd.SetOnReceived(ep.onReceived)
 		if ep.bundles[0] == bd {
 			ep.bundles[0] = NewFiberBundle(ep.bufferLen, ep.endpointType, ep.password)
@@ -119,12 +149,15 @@ func (ep *Endpoint) CreateConnection(numberOfConnections int) {
 }
 
 func (ep *Endpoint) Write(id uint32, message []byte) {
-	//log.Println("[Step  1]", len(message))
+	log.Println("[Endpoint.Write]", ShortHash(message))
 	//nmessage := make([]byte, lonReceiveden(message))
 	//copy(nmessage, message)
 	if id == 0 {
 		//TODO: bug when mbd is not prepared
-		ep.mbd.SendMessage(message)
+		ep.mbdLock.RLock()
+		x := ep.mbd
+		ep.mbdLock.RUnlock()
+		x.SendMessage(message)
 	} else {
 		p, ok := ep.bundles[id]
 		if ok {
