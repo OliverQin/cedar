@@ -133,10 +133,12 @@ func (fb *Fiber) unpack(msg []byte) *FiberPacket {
 }
 
 func (fb *Fiber) read() (*FiberPacket, error) {
+	log.Println("[Fiber.read.reading]", fb)
 	msg, err := fb.encryptor.ReadPacket(fb.conn)
 
 	if err != nil {
 		//panic("read error should not happen") //for debug
+		log.Println(err)
 		return nil, errFiberRead
 	}
 	ret := fb.unpack(msg)
@@ -177,5 +179,5 @@ func (fb *Fiber) close(err error) {
 			fb.bundle.FiberClosed(fb)
 		}
 	}
-	log.Println("[Fiber.close]", fb)
+	log.Println("[Fiber.close]", fb, err)
 }

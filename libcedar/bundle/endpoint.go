@@ -116,11 +116,13 @@ func (ep *Endpoint) ServerStart() {
 
 		//TODO: parallel here
 		hsr, err := ep.handshaker.ConfirmHandshake(conn)
+		log.Println("[Endpoint.handshaked]", hsr.id)
 		if ep.bundles.HasID(hsr.id) {
 			bd := ep.bundles.GetBundle(hsr.id)
 			NewFiber(hsr.conn, ep.encryptor, bd)
 		} else {
 			bd := NewFiberBundle(ep.bufferLen, "server", &hsr)
+			bd.SetOnReceived(ep.onReceived)
 			ep.bundles.AddBundle(bd)
 			NewFiber(hsr.conn, ep.encryptor, bd)
 		}
@@ -198,8 +200,12 @@ func (ep *Endpoint) CreateConnection(numberOfConnections int) {
 	if err != nil {
 		return
 	}
+	log.Println("Connected", ep.addr, conn)
+
 	hsr, err := ep.handshaker.RequestNewBundle(conn)
+	log.Println("request", hsr, err)
 	bd := NewFiberBundle(ep.bufferLen, "client", &hsr)
+	bd.SetOnReceived(ep.onReceived)
 	NewFiber(hsr.conn, ep.encryptor, bd)
 	err = ep.bundles.AddBundle(bd)
 	if err != nil {
@@ -218,7 +224,7 @@ func (ep *Endpoint) CreateConnection(numberOfConnections int) {
 func (ep *Endpoint) Write(id uint32, message []byte) {
 	log.Println("[Endpoint.Write]", ShortHash(message))
 
-	var x *FiberBundle = nil
+	var x *FiberBundle
 
 	x = ep.bundles.GetBundle(id)
 	if x == nil {

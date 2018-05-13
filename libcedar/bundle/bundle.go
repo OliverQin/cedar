@@ -161,12 +161,12 @@ func (bd *FiberBundle) GetFiberToWrite() *Fiber {
 
 func (bd *FiberBundle) SendMessage(msg []byte) error {
 	//TODO: token is needed here
-	bd.sendTokens <- empty{}
 	pkt := FiberPacket{
 		atomic.AddUint32(&(bd.seqs[upload]), 1) - 1,
 		typeSendData,
 		msg,
 	}
+	bd.sendTokens <- empty{}
 
 	log.Println("[Bundle.SendMessage] ", pkt.id, ShortHash(msg))
 	go bd.keepSending(pkt)
@@ -221,6 +221,7 @@ ended:
 }
 
 func (bd *FiberBundle) keepConfirming() {
+	defer log.Println("keepConfirming Stoped", bd)
 	for {
 		fb := bd.GetFiberToWrite()
 		if fb == nil {
@@ -234,21 +235,6 @@ func (bd *FiberBundle) keepConfirming() {
 		}
 
 		time.Sleep(globalConfirmWait)
-	}
-}
-
-func (bd *FiberBundle) keepReceiving(fb *Fiber) error {
-	for {
-		//log.Println("keepReceiving", fb.conn)
-		pkt, err := fb.read()
-
-		if err != nil {
-			// panic("keepReceiving failed") //for debug
-			return err
-		}
-
-		if pkt.msgType == typeHeartbeat {
-		}
 	}
 }
 
@@ -311,6 +297,8 @@ func (bd *FiberBundle) FiberCreated(fb *Fiber) {
 	bd.fibersLock.Lock()
 	defer bd.fibersLock.Unlock()
 
+	log.Println("[FiberCreated]", fb)
+
 	for _, v := range bd.fibers {
 		if v == fb {
 			return
@@ -341,6 +329,7 @@ func (bd *FiberBundle) close(err error) {
 }
 
 func (bd *FiberBundle) keepForwarding() {
+	defer log.Println("keepForwarding Stoped", bd)
 	for {
 		select {
 		case <-bd.receiveChannel:
