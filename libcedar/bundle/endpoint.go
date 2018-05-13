@@ -1,21 +1,76 @@
 package bundle
 
 import (
+	"errors"
 	"log"
 	"net"
 	"sync"
-	"time"
 )
 
+var ErrDuplicatedBundle = errors.New("duplicated bundle")
+
+type BundleCollection struct {
+	sync.RWMutex
+	data map[uint32]*FiberBundle
+	main *FiberBundle
+}
+
+func NewBundleCollection() *BundleCollection {
+	ret := new(BundleCollection)
+	ret.data = make(map[uint32]*FiberBundle)
+	ret.main = nil
+	return ret
+}
+
+func (bc *BundleCollection) AddBundle(bd *FiberBundle) error {
+	bc.Lock()
+	defer bc.Unlock()
+
+	id := bd.id
+	_, ok := bc.data[id]
+	if ok {
+		return ErrDuplicatedBundle
+	}
+	bc.data[id] = bd
+	bc.main = bd
+
+	return nil
+}
+
+func (bc *BundleCollection) HasID(id uint32) bool {
+	bc.RLock()
+	defer bc.RUnlock()
+	_, ok := bc.data[id]
+	return ok
+}
+
+func (bc *BundleCollection) GetBundle(id uint32) *FiberBundle {
+	bc.RLock()
+	defer bc.RUnlock()
+	if id == 0 {
+		return bc.main
+	}
+	v, ok := bc.data[id]
+	if ok {
+		return v
+	}
+	return nil
+}
+
+func (bc *BundleCollection) HasMain() bool {
+	bc.RLock()
+	defer bc.RUnlock()
+	return bc.main != nil
+}
+
 type Endpoint struct {
-	bundles      map[uint32]*FiberBundle
-	bufferLen    uint32
-	password     string
+	bundles   *BundleCollection
+	bufferLen uint32
+
 	addr         string
 	endpointType string
-
-	mbd     *FiberBundle
-	mbdLock sync.RWMutex
+	encryptor    CryptoIO
+	handshaker   *Handshaker
 
 	onReceived FuncDataReceived
 }
@@ -25,18 +80,19 @@ func NewEndpoint(bufferLen uint32, endpointType string, addr string, password st
 
 	n.bufferLen = bufferLen
 	n.onReceived = nil
-	n.bundles = make(map[uint32]*FiberBundle)
+	n.bundles = NewBundleCollection()
 	n.endpointType = endpointType
 	n.addr = addr
-	n.password = password
+	n.encryptor = NewCedarCryptoIO(password)
+	n.handshaker = NewHandshaker(n.encryptor, n.bundles)
 
-	n.bundles[0] = NewFiberBundle(bufferLen, endpointType, password)
-	n.mbd = nil
+	//n.bundles[0] = NewFiberBundle(bufferLen, endpointType, password)
+	//n.mbd = nil
 
 	//type FuncDataReceived func(id uint32, message []byte)
 	//n.onReceived = (*FuncDataReceived)(&callback)
 
-	go n.keepCleaning()
+	//go n.keepCleaning()
 	return n
 }
 
@@ -54,7 +110,22 @@ func (ep *Endpoint) ServerStart() {
 	}
 	for i := 0; true; i++ {
 		conn, err := lst.Accept()
-		if err == nil {
+		if err != nil {
+			continue
+		}
+
+		//TODO: parallel here
+		hsr, err := ep.handshaker.ConfirmHandshake(conn)
+		if ep.bundles.HasID(hsr.id) {
+			bd := ep.bundles.GetBundle(hsr.id)
+			NewFiber(hsr.conn, ep.encryptor, bd)
+		} else {
+			bd := NewFiberBundle(ep.bufferLen, "server", &hsr)
+			ep.bundles.AddBundle(bd)
+			NewFiber(hsr.conn, ep.encryptor, bd)
+		}
+
+		/*if err == nil {
 			bd := ep.bundles[0]
 			if bd.id != 0 {
 				panic("only new bundle should be used for handshaking")
@@ -89,11 +160,11 @@ func (ep *Endpoint) ServerStart() {
 					panic("?")
 				}
 			}
-		}
+		}*/
 	}
 }
 
-func (ep *Endpoint) keepCleaning() {
+/*func (ep *Endpoint) keepCleaning() {
 	if ep.endpointType != "server" {
 		return
 	}
@@ -112,60 +183,48 @@ func (ep *Endpoint) keepCleaning() {
 
 		time.Sleep(60 * time.Second)
 	}
-}
+}*/
 
 func (ep *Endpoint) CreateConnection(numberOfConnections int) {
 	if ep.endpointType != "client" {
 		panic("only client can call CreateConnection")
 	}
 
-	for i := 0; i < numberOfConnections; i++ {
-		conn, err := net.Dial("tcp", ep.addr)
-		//log.Println("client new fiber...", conn, err)
-		if err != nil {
-			continue
-		}
-		var bd *FiberBundle
-		if ep.mbd == nil {
-			bd = ep.bundles[0]
-		} else {
-			bd = ep.mbd
-		}
-		//log.Println("bundle add..", bd.id)
-		_, fb, err := bd.addConnection(conn)
-		//log.Println("bundle add", err, bd.id)
-		bd.addAndReceive(fb)
+	if numberOfConnections < 1 {
+		return
+	}
 
-		ep.bundles[bd.id] = bd
-		ep.mbdLock.Lock()
-		ep.mbd = ep.bundles[bd.id]
-		ep.mbdLock.Unlock()
-		ep.mbd.SetOnReceived(ep.onReceived)
-		if ep.bundles[0] == bd {
-			ep.bundles[0] = NewFiberBundle(ep.bufferLen, ep.endpointType, ep.password)
-			//log.Println("client replaced")
+	conn, err := net.Dial("tcp", ep.addr)
+	if err != nil {
+		return
+	}
+	hsr, err := ep.handshaker.RequestNewBundle(conn)
+	bd := NewFiberBundle(ep.bufferLen, "client", &hsr)
+	NewFiber(hsr.conn, ep.encryptor, bd)
+	err = ep.bundles.AddBundle(bd)
+	if err != nil {
+		return
+	}
+
+	for i := 1; i < numberOfConnections; i++ {
+		conn, err = net.Dial("tcp", ep.addr)
+		if err != nil {
+			return
 		}
+		NewFiber(conn, ep.encryptor, bd)
 	}
 }
 
 func (ep *Endpoint) Write(id uint32, message []byte) {
 	log.Println("[Endpoint.Write]", ShortHash(message))
-	//nmessage := make([]byte, lonReceiveden(message))
-	//copy(nmessage, message)
-	if id == 0 {
-		//TODO: bug when mbd is not prepared
-		ep.mbdLock.RLock()
-		x := ep.mbd
-		ep.mbdLock.RUnlock()
-		x.SendMessage(message)
-	} else {
-		p, ok := ep.bundles[id]
-		if ok {
-			p.SendMessage(message)
-		} else {
-			panic("id does not exist")
-		}
+
+	var x *FiberBundle = nil
+
+	x = ep.bundles.GetBundle(id)
+	if x == nil {
+		panic("write failed because no bundle exists")
 	}
+	x.SendMessage(message)
 	return
 }
 

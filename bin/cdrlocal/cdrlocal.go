@@ -97,7 +97,6 @@ func main() {
 	RunLocal(password, remoteService, localService)
 	//RunLocal("test_password", "127.0.0.1:27968", "127.0.0.1:1082")
 
-	//FIXME: catch os.Signal to exit
 	/*go func() {
 		time.Sleep(20 * time.Second)
 		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)

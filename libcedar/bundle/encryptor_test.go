@@ -8,11 +8,11 @@ import (
 )
 
 func TestCedarEncryptor(t *testing.T) {
-	ek := newEncryptionKey("test", cedarKdf{})
-	encryptor := cedarEncryptor{ek, nil}
+	//ek := newEncryptionKey("test", SimpleKDF{})
+	encryptor := NewCedarCryptoIO("test_test_test")
 
 	frw := bytes.NewBuffer(nil)
-	ssKey := cedarKdf{}.generate("gg", "session", 512)
+	//ssKey := SimpleKDF{}.Generate("gg", "session", 512)
 
 	for r := 0; r < 20; r++ {
 		for i := 5; i < 65; i++ {
@@ -20,7 +20,7 @@ func TestCedarEncryptor(t *testing.T) {
 			fmt.Println(i, r)
 			DefaultRNG.Read(msg)
 
-			encryptor.sessionKey = nil
+			//encryptor.sessionKey = nil
 			encryptor.WritePacket(frw, msg)
 			p, err := encryptor.ReadPacket(frw)
 
@@ -32,7 +32,7 @@ func TestCedarEncryptor(t *testing.T) {
 				panic("message changed after enc/dec")
 			}
 
-			encryptor.sessionKey = new([32]byte)
+			/*encryptor.sessionKey = new([32]byte)
 			copy(encryptor.sessionKey[:], ssKey)
 			encryptor.WritePacket(frw, msg)
 			q, err := encryptor.ReadPacket(frw)
@@ -42,7 +42,7 @@ func TestCedarEncryptor(t *testing.T) {
 			if !bytes.Equal(msg, q) {
 				log.Println("r=", r, "i=", i)
 				panic("message changed after enc/dec, using session key")
-			}
+			}*/
 		}
 	}
 

@@ -19,177 +19,101 @@ import (
 	"time"
 )
 
-type rwcDeadliner interface {
-	io.ReadWriteCloser
-	SetDeadline(time.Time) error
-}
-
-type fiberFrame struct {
-	message []byte
-	msgType uint32
+type FiberPacket struct {
 	id      uint32
+	msgType uint32
+	message []byte
 }
 
-type fiber struct {
-	conn rwcDeadliner
-	enc  encryptor
+type Fiber struct {
+	conn      io.ReadWriteCloser
+	encryptor CryptoIO
+	bundle    *FiberBundle
 
-	lastReadTime  int64
-	lastWriteTime int64
+	lastRead  int64
+	lastWrite int64
 
-	activated uint32
-	ended     chan error
+	closeSignal chan error
+	cleaned     uint32
 }
 
-var errFiberWrite = errors.New("fiber fails during writing")
-var errFiberRead = errors.New("fiber fails during reading")
-var errFiberTimeout = errors.New("fiber timeout")
+var errFiberWrite = errors.New("Fiber fails during writing")
+var errFiberRead = errors.New("Fiber fails during reading")
+var ErrConnectionTimeout = errors.New("connection timeout")
 
-func newFiber(conn rwcDeadliner, key *encryptionKey) *fiber {
-	ret := new(fiber)
+func NewFiber(conn io.ReadWriteCloser, encryptor CryptoIO, bundle *FiberBundle) *Fiber {
+	ret := new(Fiber)
+
 	ret.conn = conn
-	ret.ended = make(chan error, 0xffffff) //TODO: use this
+	ret.encryptor = encryptor
+	ret.bundle = bundle
 
-	ret.lastReadTime = time.Now().Unix()
-	ret.lastWriteTime = time.Now().Unix()
+	ret.lastRead = time.Now().Unix()
+	ret.lastWrite = time.Now().Unix()
 
-	newKey := key
-	ret.enc = &cedarEncryptor{newKey, nil}
+	ret.closeSignal = make(chan error, 88)
+	ret.cleaned = 0
 
-	ret.activated = 0
+	go ret.keepHeartbeating()
+	go ret.keepReading()
+
+	if bundle != nil {
+		bundle.FiberCreated(ret)
+	}
 
 	return ret
 }
 
-func (fb *fiber) keepHeartbeating() {
+func (fb *Fiber) keepHeartbeating() {
 	for {
 		select {
-		case err := <-fb.ended:
+		case err := <-fb.closeSignal:
 			fb.close(err)
 			return
-		case t := <-time.After(globalResend):
-			nrt := atomic.LoadInt64(&fb.lastReadTime) + int64(globalCleanup/time.Second)
-			if nrt <= t.Unix() {
-				fb.close(errFiberTimeout)
+
+		case t := <-time.After(globalMinHeartbeat): //TODO: Add randomness
+			lrt := atomic.LoadInt64(&fb.lastRead)
+			ddl := lrt + int64(GlobalConnectionTimeout/time.Second)
+			if ddl < t.Unix() {
+				fb.close(ErrConnectionTimeout)
 				return
 			}
 
-			nwt := atomic.LoadInt64(&fb.lastWriteTime) + int64(globalResend/time.Second) //TODO: add randomness
-			if nwt <= t.Unix() {
+			hbt := lrt + int64(globalMinHeartbeat/time.Second)
+			if hbt <= t.Unix() {
 				fb.sendHeartbeat()
-				//log.Println(nt, t, "heartbeat", &fb)
 			}
 		}
 	}
 }
 
-func (fb *fiber) sendHeartbeat() error {
-	return fb.write(fiberFrame{nil, typeHeartbeat, 0})
-}
+func (fb *Fiber) keepReading() {
+	for {
+		select {
+		case err := <-fb.closeSignal:
+			fb.close(err)
+			return
+		default:
+			//do nothing
+		}
 
-/*
-handshake send handshake info to remote server.
-*/
-func (fb *fiber) handshake(id uint32) (uint32, uint32, uint32, error) {
-	//If id is 0, ask server for a new id.
-	//Otherwise, tell server to add this fiber to the bundle with this id.
-	if id == 0 {
-		err := fb.write(fiberFrame{[]byte(""), typeRequestAllocation, 0})
+		pkt, err := fb.read()
 		if err != nil {
-			return 0, 0, 0, err
-		}
-	} else {
-		var sendBuf [4]byte
-		binary.BigEndian.PutUint32(sendBuf[:], id)
-		err := fb.write(fiberFrame{sendBuf[:], typeAddNewFiber, 0})
-		if err != nil {
-			return 0, 0, 0, err
-		}
-	}
-
-	//Read message sent back.
-	frm, err := fb.read()
-	if err != nil {
-		return 0, 0, 0, err
-	}
-
-	//Check message sent back.
-	tp := frm.msgType
-	if id == 0 {
-		if tp != typeAllocationConfirm || len(frm.message) < 12 {
-			return 0, 0, 0, errAllocationFailed
-		}
-	} else {
-		if tp != typeFiberAdded {
-			return 0, 0, 0, errAddingFailed
-		}
-	}
-
-	//Modify metadata if it is allocation
-	if id == 0 {
-		bufBack := frm.message
-
-		newID := binary.BigEndian.Uint32(bufBack[:4])
-		s2c := binary.BigEndian.Uint32(bufBack[4:8])
-		c2s := binary.BigEndian.Uint32(bufBack[8:12])
-
-		return newID, c2s, s2c, nil
-	}
-
-	return id, 0, 0, nil
-}
-
-/*
-Add fiber to this bundle, only if id matches. Return 0, nil
-If id does not match, return id, nil, do not add fiber
-Error happens: return 0, err
-*/
-func (fb *fiber) waitHandshake() (uint32, uint32, uint32, error) {
-	f, err := fb.read()
-	if err != nil {
-		return 0, 0, 0, err
-	}
-
-	id := uint32(0)
-	switch f.msgType {
-	case typeRequestAllocation:
-		for id == 0 {
-			id = DefaultRNG.Uint32()
+			fb.close(err)
+			return
 		}
 
-		var bufBack [12]byte
-		binary.BigEndian.PutUint32(bufBack[:4], id)
-		seqC2s := uint32(10000000) //DefaultRNG.Uint32()
-		seqS2c := uint32(20000000) //DefaultRNG.Uint32()
-		//seqC2s := DefaultRNG.Uint32()
-		//seqS2c := DefaultRNG.Uint32()
-
-		binary.BigEndian.PutUint32(bufBack[4:8], seqS2c)
-		binary.BigEndian.PutUint32(bufBack[8:12], seqC2s)
-		writeError := fb.write(fiberFrame{bufBack[:], typeAllocationConfirm, 0})
-
-		if writeError != nil {
-			return id, 0, 0, writeError
+		if fb.bundle != nil {
+			fb.bundle.PacketReceived(pkt)
 		}
-
-		return id, seqC2s, seqS2c, nil
-	case typeAddNewFiber:
-		id = binary.BigEndian.Uint32(f.message[:4])
-		bufBack := make([]byte, 4)
-		binary.BigEndian.PutUint32(bufBack, id)
-
-		writeError := fb.write(fiberFrame{bufBack[:], typeFiberAdded, 0})
-		if writeError != nil {
-			return id, 0, 0, writeError
-		}
-
-		return id, 0, 0, nil
-	default:
-		return id, 0, 0, errUnexpectedRequest
 	}
 }
 
-func (fb *fiber) pack(f *fiberFrame) []byte {
+func (fb *Fiber) sendHeartbeat() {
+	fb.write(FiberPacket{0, typeHeartbeat, nil})
+}
+
+func (fb *Fiber) pack(f *FiberPacket) []byte {
 	ret := make([]byte, len(f.message)+1+4)
 
 	ret[0] = uint8(f.msgType)
@@ -199,8 +123,8 @@ func (fb *fiber) pack(f *fiberFrame) []byte {
 	return ret
 }
 
-func (fb *fiber) unpack(msg []byte) *fiberFrame {
-	ret := new(fiberFrame)
+func (fb *Fiber) unpack(msg []byte) *FiberPacket {
+	ret := new(FiberPacket)
 	ret.message = msg[5:]
 	ret.msgType = uint32(msg[0])
 	ret.id = binary.BigEndian.Uint32(msg[1:5])
@@ -208,8 +132,8 @@ func (fb *fiber) unpack(msg []byte) *fiberFrame {
 	return ret
 }
 
-func (fb *fiber) read() (*fiberFrame, error) {
-	msg, err := fb.enc.ReadPacket(fb.conn)
+func (fb *Fiber) read() (*FiberPacket, error) {
+	msg, err := fb.encryptor.ReadPacket(fb.conn)
 
 	if err != nil {
 		//panic("read error should not happen") //for debug
@@ -221,14 +145,14 @@ func (fb *fiber) read() (*fiberFrame, error) {
 		log.Println("[Fiber.read]", ret.id)
 	}
 
-	atomic.StoreInt64(&fb.lastReadTime, time.Now().Unix())
+	atomic.StoreInt64(&fb.lastRead, time.Now().Unix())
 
 	return ret, nil
 }
 
-func (fb *fiber) write(f fiberFrame) error {
+func (fb *Fiber) write(f FiberPacket) error {
 	packed := fb.pack(&f)
-	n, err := fb.enc.WritePacket(fb.conn, packed)
+	n, err := fb.encryptor.WritePacket(fb.conn, packed)
 	if f.msgType == typeSendData {
 		log.Println("[Fiber.write]", f.id)
 	}
@@ -237,23 +161,21 @@ func (fb *fiber) write(f fiberFrame) error {
 		return errFiberWrite
 	}
 
-	atomic.StoreInt64(&fb.lastWriteTime, time.Now().Unix())
+	atomic.StoreInt64(&fb.lastWrite, time.Now().Unix())
 
 	return nil
 }
 
-func (fb *fiber) activate() {
-	if atomic.AddUint32(&fb.activated, 1) == 1 {
-		go fb.keepHeartbeating()
-	}
-	//else {
-	// 	panic("activate should be not called twice")
-	//}
-}
+func (fb *Fiber) close(err error) {
+	if 1 == atomic.AddUint32(&fb.cleaned, 1) {
+		for i := 0; i < 5; i++ {
+			fb.closeSignal <- err
+		}
 
-func (fb *fiber) close(err error) {
-	fb.ended <- err
-	fb.conn.Close()
-	atomic.AddUint32(&fb.activated, 0xf) //TODO: dirty, fix this
+		fb.conn.Close()
+		if fb.bundle != nil {
+			fb.bundle.FiberClosed(fb)
+		}
+	}
 	log.Println("[Fiber.close]", fb)
 }
