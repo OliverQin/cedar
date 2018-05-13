@@ -19,7 +19,6 @@ func PrintUsage() {
 }
 
 func RunServer(password string, local string) {
-	//Conns := 20
 	BufSize := uint32(100)
 
 	ssServer := socks.NewServer()

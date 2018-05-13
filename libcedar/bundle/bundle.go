@@ -10,13 +10,18 @@ import (
 	"time"
 )
 
-type FuncBundleCreated func(id uint32)
+//type FuncBundleCreated func(id uint32)
+
 type FuncDataReceived func(id uint32, message []byte)
+
 type FuncBundleLost func(id uint32)
+
 type FuncFiberLost func(id uint32)
+
 type empty struct{}
 
 var errUnexpectedRequest = errors.New("unexpected request")
+var ErrAllFibersLost = errors.New("all fibers lost")
 
 const (
 	serverBundle uint32 = 1
@@ -41,17 +46,18 @@ type FiberBundle struct {
 	//sendBuffer map[uint32]*FiberPacket
 
 	closeChan chan error
+	cleaned   uint32
 
 	confirmGotSignal map[uint32]chan empty
 	confirmGotLock   sync.RWMutex
 
 	received *bundleReceivedIDs
 
-	callbackLock    sync.RWMutex
-	onBundleCreated FuncBundleCreated
-	onReceived      FuncDataReceived
-	onFiberLost     FuncFiberLost
-	onBundleLost    FuncBundleLost
+	//onBundleCreated FuncBundleCreated
+	callbackLock sync.RWMutex
+	onReceived   FuncDataReceived
+	onFiberLost  FuncFiberLost
+	onBundleLost FuncBundleLost
 }
 
 func NewFiberBundle(bufferLen uint32, bundleType string, hsr *HandshakeResult) *FiberBundle {
@@ -115,12 +121,6 @@ func (bd *FiberBundle) SetOnBundleLost(f FuncBundleLost) {
 	bd.callbackLock.Unlock()
 }
 
-func (bd *FiberBundle) SetOnBundleCreated(f FuncBundleCreated) {
-	bd.callbackLock.Lock()
-	bd.onBundleCreated = f
-	bd.callbackLock.Unlock()
-}
-
 func (bd *FiberBundle) GetSize() int {
 	bd.fibersLock.RLock()
 	x := len(bd.fibers)
@@ -160,13 +160,12 @@ func (bd *FiberBundle) GetFiberToWrite() *Fiber {
 }
 
 func (bd *FiberBundle) SendMessage(msg []byte) error {
-	//TODO: token is needed here
+	bd.sendTokens <- empty{}
 	pkt := FiberPacket{
 		atomic.AddUint32(&(bd.seqs[upload]), 1) - 1,
 		typeSendData,
 		msg,
 	}
-	bd.sendTokens <- empty{}
 
 	log.Println("[Bundle.SendMessage] ", pkt.id, ShortHash(msg))
 	go bd.keepSending(pkt)
@@ -180,8 +179,7 @@ It ends until message is sent and confirmed.
 */
 func (bd *FiberBundle) keepSending(pkt FiberPacket) {
 	bd.confirmGotLock.Lock()
-	//TODO: length 1 channel should be OK but failed sometimes, hard to reproduce
-	bd.confirmGotSignal[pkt.id] = make(chan empty, 0xf00beef)
+	bd.confirmGotSignal[pkt.id] = make(chan empty, 0xff)
 	thisChannel := bd.confirmGotSignal[pkt.id]
 	bd.confirmGotLock.Unlock()
 
@@ -321,11 +319,39 @@ func (bd *FiberBundle) FiberClosed(fb *Fiber) {
 		}
 	}
 
-	//FIXME: close this channel
+	bd.callbackLock.RLock()
+	defer bd.callbackLock.RUnlock()
+	if bd.onFiberLost != nil {
+		go bd.onFiberLost(bd.id)
+	}
+
+	if len(bd.fibers) == 0 {
+		go bd.Close(ErrAllFibersLost)
+	}
 }
 
-func (bd *FiberBundle) close(err error) {
+func (bd *FiberBundle) Close(err error) {
+	bd.fibersLock.Lock()
+	defer bd.fibersLock.Unlock()
 
+	if 1 != atomic.AddUint32(&bd.cleaned, 1) {
+		return
+	}
+
+	for _, v := range bd.fibers {
+		v.Close(err)
+	}
+	bd.fibers = bd.fibers[:0]
+
+	for i := 0; i < 5; i++ {
+		bd.closeChan <- err
+	}
+
+	bd.callbackLock.RLock()
+	defer bd.callbackLock.RUnlock()
+	if bd.onBundleLost != nil {
+		go bd.onBundleLost(bd.id)
+	}
 }
 
 func (bd *FiberBundle) keepForwarding() {

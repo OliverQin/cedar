@@ -114,13 +114,29 @@ func (hs *Handshaker) RequestNewBundle(conn io.ReadWriteCloser) (HandshakeResult
 	return hs.getResponse(conn)
 }
 
+func (hs *Handshaker) RequestAddToBundle(conn io.ReadWriteCloser, id uint32) (HandshakeResult, error) {
+	//Prepare for message
+	msg := make([]byte, 20)
+	nonce := DefaultRNG.Uint64()
+	copy(msg[0:8], addMagic)
+	binary.BigEndian.PutUint64(msg[8:16], nonce)
+	binary.BigEndian.PutUint32(msg[16:20], id)
+
+	//Ask server for new ID
+	_, err := hs.encryptor.WritePacket(conn, msg)
+	if err != nil {
+		return HandshakeResult{}, err
+	}
+
+	return hs.getResponse(conn)
+}
 func (hs *Handshaker) createNewBundle(conn io.ReadWriteCloser) (HandshakeResult, error) {
 	id := uint32(0)
 	for id == 0 || hs.bundles.HasID(id) {
 		id = DefaultRNG.Uint32()
 	}
 
-	var msg [20]byte
+	msg := make([]byte, 20)
 	seqC2s := DefaultRNG.Uint32()
 	seqS2c := DefaultRNG.Uint32()
 
@@ -129,7 +145,7 @@ func (hs *Handshaker) createNewBundle(conn io.ReadWriteCloser) (HandshakeResult,
 	binary.BigEndian.PutUint32(msg[12:16], seqS2c)
 	binary.BigEndian.PutUint32(msg[16:20], seqC2s)
 
-	_, err := hs.encryptor.WritePacket(conn, msg[:])
+	_, err := hs.encryptor.WritePacket(conn, msg)
 	if err != nil {
 		return HandshakeResult{}, err
 	}
@@ -140,6 +156,7 @@ func (hs *Handshaker) createNewBundle(conn io.ReadWriteCloser) (HandshakeResult,
 
 func (hs *Handshaker) addNonce(nonce uint64) bool {
 	hs.nonceLock.Lock()
+	defer hs.nonceLock.Unlock()
 
 	var size int
 	if hs.nonceCounter >= nonceArraySize {
@@ -159,13 +176,11 @@ func (hs *Handshaker) addNonce(nonce uint64) bool {
 }
 
 func (hs *Handshaker) addBundle(conn io.ReadWriteCloser, id uint32) (HandshakeResult, error) {
-	msg := make([]byte, 4)
-	binary.BigEndian.PutUint32(msg, id)
-
 	if !hs.bundles.HasID(id) {
 		return HandshakeResult{}, ErrHandshakeFailed
 	}
 
+	msg := make([]byte, 20)
 	bd := hs.bundles.GetBundle(id)
 
 	copy(msg[0:8], []byte(replyMagic))
@@ -175,13 +190,12 @@ func (hs *Handshaker) addBundle(conn io.ReadWriteCloser, id uint32) (HandshakeRe
 	binary.BigEndian.PutUint32(msg[12:16], s2c)
 	binary.BigEndian.PutUint32(msg[16:20], c2s)
 
-	_, err := hs.encryptor.WritePacket(conn, msg[:])
+	_, err := hs.encryptor.WritePacket(conn, msg)
 	if err != nil {
 		return HandshakeResult{}, err
 	}
 
 	return HandshakeResult{id, s2c, c2s, conn}, nil
-
 }
 
 func (hs *Handshaker) ConfirmHandshake(conn io.ReadWriteCloser) (HandshakeResult, error) {
@@ -189,6 +203,7 @@ func (hs *Handshaker) ConfirmHandshake(conn io.ReadWriteCloser) (HandshakeResult
 	if err != nil {
 		return HandshakeResult{}, ErrHandshakeFailed
 	}
+
 	if len(msg) >= 16 {
 		nonce := binary.BigEndian.Uint64(msg[8:16])
 		if !hs.addNonce(nonce) {

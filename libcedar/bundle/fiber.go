@@ -37,8 +37,8 @@ type Fiber struct {
 	cleaned     uint32
 }
 
-var errFiberWrite = errors.New("Fiber fails during writing")
-var errFiberRead = errors.New("Fiber fails during reading")
+var errFiberWrite = errors.New("failure during writing")
+var errFiberRead = errors.New("failure during reading")
 var ErrConnectionTimeout = errors.New("connection timeout")
 
 func NewFiber(conn io.ReadWriteCloser, encryptor CryptoIO, bundle *FiberBundle) *Fiber {
@@ -68,14 +68,14 @@ func (fb *Fiber) keepHeartbeating() {
 	for {
 		select {
 		case err := <-fb.closeSignal:
-			fb.close(err)
+			fb.Close(err)
 			return
 
 		case t := <-time.After(globalMinHeartbeat): //TODO: Add randomness
 			lrt := atomic.LoadInt64(&fb.lastRead)
 			ddl := lrt + int64(GlobalConnectionTimeout/time.Second)
 			if ddl < t.Unix() {
-				fb.close(ErrConnectionTimeout)
+				fb.Close(ErrConnectionTimeout)
 				return
 			}
 
@@ -91,7 +91,7 @@ func (fb *Fiber) keepReading() {
 	for {
 		select {
 		case err := <-fb.closeSignal:
-			fb.close(err)
+			fb.Close(err)
 			return
 		default:
 			//do nothing
@@ -99,7 +99,7 @@ func (fb *Fiber) keepReading() {
 
 		pkt, err := fb.read()
 		if err != nil {
-			fb.close(err)
+			fb.Close(err)
 			return
 		}
 
@@ -168,7 +168,7 @@ func (fb *Fiber) write(f FiberPacket) error {
 	return nil
 }
 
-func (fb *Fiber) close(err error) {
+func (fb *Fiber) Close(err error) {
 	if 1 == atomic.AddUint32(&fb.cleaned, 1) {
 		for i := 0; i < 5; i++ {
 			fb.closeSignal <- err

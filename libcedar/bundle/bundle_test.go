@@ -8,8 +8,7 @@ import (
 )
 
 const (
-	magicID  = 42
-	msgCount = 100
+	magicID = 42
 )
 
 var msgBundleBasic = make(chan []byte, 100)
@@ -21,32 +20,45 @@ func dataReceivedBundleBasic(id uint32, message []byte) {
 	msgBundleBasic <- message
 }
 
-func TestBundleBasic(t *testing.T) {
-	addr := "127.0.0.1:22350"
-	message := "Cooool! Awesome!"
+func localConnPairs(addr string, num int) []net.Conn {
+	ret := make([]net.Conn, num*2)
 
 	lst, _ := net.Listen("tcp", addr)
 	ch := make(chan net.Conn, 10)
-	go func() {
-		c, _ := lst.Accept()
-		ch <- c
-	}()
-	connClt, _ := net.Dial("tcp", addr)
-	connSvr := <-ch
 
-	hsrS := HandshakeResult{magicID, 1000000, 4000000, connSvr}
-	hsrC := HandshakeResult{magicID, 1000000, 4000000, connClt}
+	for i := 0; i < num; i++ {
+		go func() {
+			c, _ := lst.Accept()
+			ch <- c
+		}()
+		connClt, _ := net.Dial("tcp", addr)
+		connSvr := <-ch
+
+		ret[i] = connSvr
+		ret[i+num] = connClt
+	}
+	return ret
+}
+
+func testOne(addr string, num int, bufSize uint32, msgCount int) {
+	message := "Cooool! Awesome!"
+
+	conns := localConnPairs(addr, num)
+
+	hsrS := HandshakeResult{magicID, 1000000, 4000000, conns[0]}
+	hsrC := HandshakeResult{magicID, 1000000, 4000000, conns[num]}
 	encryptor := NewCedarCryptoIO("12345")
 
-	bdS := NewFiberBundle(20, "server", &hsrS)
-	bdC := NewFiberBundle(20, "client", &hsrC)
+	bdS := NewFiberBundle(bufSize, "server", &hsrS)
+	bdC := NewFiberBundle(bufSize, "client", &hsrC)
 
-	NewFiber(hsrS.conn, encryptor, bdS)
-	NewFiber(hsrC.conn, encryptor, bdC)
+	for i := 0; i < num; i++ {
+		NewFiber(conns[i], encryptor, bdS)
+		NewFiber(conns[i+num], encryptor, bdC)
 
-	bdC.SetOnReceived(dataReceivedBundleBasic)
-	bdS.SetOnReceived(dataReceivedBundleBasic)
-
+		bdS.SetOnReceived(dataReceivedBundleBasic)
+		bdC.SetOnReceived(dataReceivedBundleBasic)
+	}
 	go func() {
 		for i := 0; i < msgCount; i++ {
 			bdC.SendMessage([]byte(message))
@@ -66,8 +78,24 @@ func TestBundleBasic(t *testing.T) {
 			if string(x) != message {
 				panic("data error")
 			}
-		case <-time.After(90 * time.Second):
+		case <-time.After(10 * time.Second):
 			panic("no message got and test failed")
 		}
 	}
+
+	select {
+	case <-msgBundleBasic:
+		panic("too much message in channel")
+	default:
+		//pass
+	}
+}
+
+func TestBundleBasic(t *testing.T) {
+	testOne("127.0.0.1:20001", 1, 1, 100)
+	testOne("127.0.0.1:20001", 1, 30, 100)
+}
+
+func TestBundleParallel(t *testing.T) {
+	testOne("127.0.0.1:20001", 3, 1, 100)
 }
