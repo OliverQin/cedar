@@ -20,7 +20,7 @@ func PrintUsage() {
 }
 
 func RunLocal(password string, remote string, local string) {
-	Conns := 2
+	Conns := 10
 	BufSize := uint32(100)
 
 	ssClient := socks.NewClient(local)

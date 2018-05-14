@@ -169,15 +169,16 @@ func (fb *Fiber) write(f FiberPacket) error {
 }
 
 func (fb *Fiber) Close(err error) {
-	if 1 == atomic.AddUint32(&fb.cleaned, 1) {
-		for i := 0; i < 5; i++ {
-			fb.closeSignal <- err
-		}
-
-		fb.conn.Close()
-		if fb.bundle != nil {
-			fb.bundle.FiberClosed(fb)
-		}
+	if 1 != atomic.AddUint32(&fb.cleaned, 1) {
+		return
 	}
-	log.Println("[Fiber.close]", fb, err)
+
+	for i := 0; i < 5; i++ {
+		fb.closeSignal <- err
+	}
+
+	fb.conn.Close()
+	if fb.bundle != nil {
+		go fb.bundle.FiberClosed(fb)
+	}
 }

@@ -219,7 +219,6 @@ ended:
 }
 
 func (bd *FiberBundle) keepConfirming() {
-	defer log.Println("keepConfirming Stoped", bd)
 	for {
 		fb := bd.GetFiberToWrite()
 		if fb == nil {
@@ -309,53 +308,57 @@ func (bd *FiberBundle) FiberCreated(fb *Fiber) {
 FiberClosed is called to notify the bundle that a new fiber closed.
 */
 func (bd *FiberBundle) FiberClosed(fb *Fiber) {
+	var closedOneFiber = false
 	bd.fibersLock.Lock()
-	defer bd.fibersLock.Unlock()
-
 	for i, v := range bd.fibers {
 		if v == fb {
 			bd.fibers = append(bd.fibers[:i], bd.fibers[i+1:]...)
+			closedOneFiber = true
 			break
 		}
 	}
+	lenFibers := len(bd.fibers)
+	bd.fibersLock.Unlock()
+
+	if !closedOneFiber {
+		return
+	}
 
 	bd.callbackLock.RLock()
-	defer bd.callbackLock.RUnlock()
 	if bd.onFiberLost != nil {
 		go bd.onFiberLost(bd.id)
 	}
+	bd.callbackLock.RUnlock()
 
-	if len(bd.fibers) == 0 {
-		go bd.Close(ErrAllFibersLost)
+	if lenFibers == 0 {
+		bd.Close(ErrAllFibersLost)
 	}
 }
 
 func (bd *FiberBundle) Close(err error) {
-	bd.fibersLock.Lock()
-	defer bd.fibersLock.Unlock()
-
 	if 1 != atomic.AddUint32(&bd.cleaned, 1) {
 		return
 	}
 
+	bd.fibersLock.Lock()
 	for _, v := range bd.fibers {
 		v.Close(err)
 	}
 	bd.fibers = bd.fibers[:0]
+	bd.fibersLock.Unlock() //NOTE: cannot defer, otherwise FiberClosed gets stuck
 
 	for i := 0; i < 5; i++ {
 		bd.closeChan <- err
 	}
 
 	bd.callbackLock.RLock()
-	defer bd.callbackLock.RUnlock()
 	if bd.onBundleLost != nil {
 		go bd.onBundleLost(bd.id)
 	}
+	bd.callbackLock.RUnlock()
 }
 
 func (bd *FiberBundle) keepForwarding() {
-	defer log.Println("keepForwarding Stoped", bd)
 	for {
 		select {
 		case <-bd.receiveChannel:
