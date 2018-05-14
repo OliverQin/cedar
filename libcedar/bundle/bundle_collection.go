@@ -60,3 +60,12 @@ func (bc *BundleCollection) HasMain() bool {
 	defer bc.RUnlock()
 	return bc.main != nil
 }
+
+func (bc *BundleCollection) GetMain() *FiberBundle {
+	bc.RLock()
+	defer bc.RUnlock()
+	if bc.main != nil {
+		return bc.main
+	}
+	return nil
+}

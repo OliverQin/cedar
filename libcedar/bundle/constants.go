@@ -41,14 +41,12 @@ var globalResend = defaultResend
 var globalMinHeartbeat = time.Second * 10
 var globalMaxHeartbeat = defaultResend
 var globalConfirmWait = defaultConfirmWait
-var globalCleanup = defaultTimeout * 5
 
 func SetGlobalTimeout(duration time.Duration) {
 	if duration < 0 {
 		duration = 3600 * time.Second //one hour
 	}
 	GlobalConnectionTimeout = duration
-	globalCleanup = GlobalConnectionTimeout * 5
 }
 
 func SetGlobalResend(duration time.Duration) {
