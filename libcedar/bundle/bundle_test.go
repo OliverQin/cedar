@@ -91,8 +91,11 @@ func testOne(addr string, num int, bufSize uint32, msgCount int) {
 	}
 }
 
+func TestBundleMini(t *testing.T) {
+	testOne("127.0.0.1:20001", 1, 1, 20)
+}
+
 func TestBundleBasic(t *testing.T) {
-	testOne("127.0.0.1:20001", 1, 1, 100)
 	testOne("127.0.0.1:20001", 1, 30, 100)
 }
 
