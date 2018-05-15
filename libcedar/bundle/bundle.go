@@ -335,6 +335,10 @@ func (bd *FiberBundle) FiberClosed(fb *Fiber) {
 	}
 }
 
+func (bd *FiberBundle) IsClosed() bool {
+	return atomic.LoadUint32(&bd.cleaned) > 0
+}
+
 func (bd *FiberBundle) Close(err error) {
 	if 1 != atomic.AddUint32(&bd.cleaned, 1) {
 		return

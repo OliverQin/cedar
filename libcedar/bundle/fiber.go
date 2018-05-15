@@ -181,3 +181,7 @@ func (fb *Fiber) Close(err error) {
 		go fb.bundle.FiberClosed(fb)
 	}
 }
+
+func (fb *Fiber) IsClosed() bool {
+	return atomic.LoadUint32(&fb.cleaned) > 0
+}
