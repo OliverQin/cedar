@@ -81,7 +81,7 @@ func testOne(addr string, num int, bufSize uint32, msgCount int) {
 			if string(x) != message {
 				panic("data error")
 			}
-		case <-time.After(10 * time.Second):
+		case <-time.After(60 * time.Second):
 			panic("no message got and test failed")
 		}
 	}

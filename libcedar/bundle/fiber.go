@@ -68,7 +68,7 @@ func (fb *Fiber) keepHeartbeating() {
 	for {
 		select {
 		case err := <-fb.closeSignal:
-			fb.Close(err)
+			fb.closeSignal <- err
 			return
 
 		case t := <-time.After(globalMinHeartbeat): //TODO: Add randomness
@@ -91,7 +91,7 @@ func (fb *Fiber) keepReading() {
 	for {
 		select {
 		case err := <-fb.closeSignal:
-			fb.Close(err)
+			fb.closeSignal <- err
 			return
 		default:
 			//do nothing
@@ -138,7 +138,6 @@ func (fb *Fiber) read() (*FiberPacket, error) {
 
 	if err != nil {
 		//panic("read error should not happen") //for debug
-		log.Println(err)
 		return nil, errFiberRead
 	}
 	ret := fb.unpack(msg)

@@ -163,7 +163,7 @@ func (ce CedarCryptoIO) ReadPacket(conn io.ReadWriter) ([]byte, error) {
 	_, err := io.ReadFull(conn, fastCheck)
 	if err != nil {
 		//Early returns cause time-based attack possible. (do not care)
-		return nil, ErrIllegalPacket
+		return nil, err
 	}
 
 	//half padding (from ivPad), half from packet.
