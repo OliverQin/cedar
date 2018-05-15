@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/OliverQin/cedar/libcedar/bundle"
-	"github.com/OliverQin/cedar/libcedar/socks"
+	"github.com/OliverQin/cedar/libcedar/proxy"
 )
 
 func PrintUsage() {
@@ -18,44 +17,16 @@ func PrintUsage() {
 	flag.PrintDefaults()
 }
 
-func RunServer(password string, local string) {
-	BufSize := uint32(100)
-
-	ssServer := socks.NewServer()
-
-	sv := bundle.NewEndpoint(BufSize, "server", local, password)
-
-	serverToSocks := func(id uint32, msg []byte) {
-		//FIXME: id is not used, it's wrong. Now only one-client supported. Currying is needed.
-		//fmt.Println("sv to socks:", len(msg), msg)
-		copiedMsg := make([]byte, len(msg))
-		copy(copiedMsg, msg)
-		ssServer.WriteCommand(copiedMsg)
-	}
-
-	socksToServer := func(msg []byte) error {
-		copiedMsg := make([]byte, len(msg))
-		copy(copiedMsg, msg)
-		sv.Write(0, copiedMsg)
-		//fmt.Println("socks to sv", len(msg), msg)
-		return nil
-	}
-
-	ssServer.OnCommandGenerated = socksToServer
-	sv.SetOnReceived(serverToSocks)
-
-	fmt.Println("Running...")
-	sv.ServerStart()
-}
-
 func main() {
 	var helpInfo bool
 	var serviceString string
 	var password string
+	var bufferSize int
 
 	flag.BoolVar(&helpInfo, "h", false, "Display help info.")
-	flag.StringVar(&serviceString, "s", "", "Service string like \"127.0.0.1:41289\". ")
-	flag.StringVar(&password, "p", "123456", "Password for encryption")
+	flag.StringVar(&serviceString, "s", "127.0.0.1:41289", "Service string like \"127.0.0.1:41289\".")
+	flag.StringVar(&password, "p", "123456", "Password for encryption.")
+	flag.IntVar(&bufferSize, "b", 100, "Max number of buffers.")
 
 	flag.Parse()
 
@@ -74,5 +45,7 @@ func main() {
 		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 		panic("stop")
 	}()*/
-	RunServer(password, serviceString)
+
+	server := proxy.NewProxyServer(password, serviceString, bufferSize)
+	server.Run()
 }

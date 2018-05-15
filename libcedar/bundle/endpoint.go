@@ -14,7 +14,8 @@ type Endpoint struct {
 	encryptor    CryptoIO
 	handshaker   *Handshaker
 
-	onReceived FuncDataReceived
+	onReceived   FuncDataReceived
+	onBundleLost FuncBundleLost
 }
 
 func NewEndpoint(bufferLen uint32, endpointType string, addr string, password string) *Endpoint {
@@ -58,6 +59,7 @@ func (ep *Endpoint) ServerStart() {
 			} else {
 				bd := NewFiberBundle(ep.bufferLen, "server", &hsr)
 				bd.SetOnReceived(ep.onReceived)
+				bd.SetOnBundleLost(ep.onBundleLost)
 				ep.bundles.AddBundle(bd)
 				NewFiber(hsr.conn, ep.encryptor, bd)
 			}
@@ -121,16 +123,9 @@ func (ep *Endpoint) Write(id uint32, message []byte) {
 }
 
 func (ep *Endpoint) SetOnReceived(f FuncDataReceived) {
-	/*if id == 0 {
-		ep.mbd.SetOnReceived(f)
-	} else {
-		p, ok := ep.bundles[id]
-		if ok {
-			p.SetOnReceived(f)
-		} else {
-			panic("id does not exist")
-		}
-	}
-	return*/
 	ep.onReceived = f
+}
+
+func (ep *Endpoint) SetOnBundleLost(f FuncBundleLost) {
+	ep.onBundleLost = f
 }
