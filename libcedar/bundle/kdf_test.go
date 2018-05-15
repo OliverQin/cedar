@@ -6,16 +6,16 @@ import (
 	"testing"
 )
 
-func TestCedarKdf(t *testing.T) {
-	var k kdf
+func TestCedarKDF(t *testing.T) {
+	var k KDF
 
-	k = cedarKdf{}
-	token := k.generate("MyPassword", "Cedar_Session", 256)
+	k = SimpleKDF{}
+	token := k.Generate("MyPassword", "Cedar_Session", 256)
 
 	res := hex.EncodeToString(token)
 
 	log.Println(res)
-	if res != "a332512bca33c1087513a3e026d38a4d9319e27f419f814440a142b4dad40d48" {
-		panic("kdf did not get expected result")
+	if res != "765f3ae4743384dfa6a7b2ceafe4b795f0f4ef9a6cb12f79fda6477ddbf3c418" {
+		panic("KDF did not get expected result")
 	}
 }

@@ -12,117 +12,128 @@ import (
 	"time"
 )
 
-var errIllegalPacket = errors.New("packet is illegal")
+/*
+ErrIllegalPacket is returned when an illegal packet is received.
+*/
+var ErrIllegalPacket = errors.New("packet is illegal")
 
 const (
-	magicStr = "cEdR"
+	epochStart  = int64(0x5a83c811)
+	timeDiffTol = 600 // Tolerance of time difference between two machine, +/- ten minutes
 )
 
-const (
-	epochStart = 0x5a83c811
-)
-
-func timeStamp() uint32 {
-	//TODO: not used yet, probably useful for anti-replay
+func timestamp() uint32 {
 	return uint32(time.Now().Unix() - epochStart)
 }
 
-type encryptor interface {
+func timeMatch(network uint32) bool {
+	local := timestamp()
+	if network > local {
+		return (network - local) <= timeDiffTol
+	}
+	return (local - network) <= timeDiffTol
+}
+
+/*
+CryptoIO is an interface for crypto-writing/reading on a stream.
+*/
+type CryptoIO interface {
 	WritePacket(conn io.ReadWriter, msg []byte) (int, error)
 	ReadPacket(conn io.ReadWriter) ([]byte, error)
-	SetKey(key []byte)
+	SetKey(password string)
 }
 
-type encryptionKey struct {
-	ivPad     [64]byte //we assume 512-bit is enough
-	ivKey     [64]byte
-	macKey    [64]byte
-	commonKey [64]byte
+/*
+CedarCryptoIO is CryptoIO for Cedar.
+*/
+type CedarCryptoIO struct {
+	ivCipher  cipher.Block
+	msgCipher cipher.Block
+
+	macKey []byte
+	ivPad  []byte
 }
 
-func newEncryptionKey(masterPhrase string, k kdf) *encryptionKey {
-	ek := new(encryptionKey)
+/*
+NewCedarCryptoIO create a new CedarCryptoIO.
+*/
+func NewCedarCryptoIO(password string) *CedarCryptoIO {
+	ret := new(CedarCryptoIO)
+	ret.SetKey(password)
 
-	copy(ek.ivPad[:], k.generate(masterPhrase, "cedar/ivPad", 512))
-	copy(ek.ivKey[:], k.generate(masterPhrase, "cedar/ivKey", 512))
-	copy(ek.macKey[:], k.generate(masterPhrase, "cedar/macKey", 512))
-	copy(ek.commonKey[:], k.generate(masterPhrase, "cedar/commonKey", 512))
-
-	return ek
+	return ret
 }
 
-type cedarEncryptor struct {
-	keys       *encryptionKey
-	sessionKey *[32]byte
-}
-
-func (ce *cedarEncryptor) SetKey(key []byte) {
-	if len(key) < 32 {
-		panic("SetKey should work with 256-bit key")
-	}
-	ce.sessionKey = new([32]byte)
-	copy(ce.sessionKey[:], key)
-}
-
-func (ce cedarEncryptor) WritePacket(conn io.ReadWriter, msg []byte) (int, error) {
+/*
+SetKey sets password for CedarCryptoIO.
+*/
+func (ce *CedarCryptoIO) SetKey(password string) {
 	//encryption algorithm is aes-256-cbc
 	//mac: hmac-sha512(trunc to 64), mac-then-encrypt
+	//KDF here is used for strengthening keys and deriving (irrelevant) keys from same password.
 
-	KeySize := 32 //256-bit
+	k := SimpleKDF{}
+	ce.ivCipher, _ = aes.NewCipher(k.Generate(password, "cedar/ivKey", 256))
+	ce.msgCipher, _ = aes.NewCipher(k.Generate(password, "cedar/msgKey", 256))
+
+	ce.macKey = k.Generate(password, "cedar/macKey", 512)
+	ce.ivPad = k.Generate(password, "cedar/ivPad", 64)
+
+	return
+}
+
+/*
+WritePacket writes a block of encrypted message to conn.
+It returns the size actually wrote (larger than len(msg)) and error.
+*/
+func (ce CedarCryptoIO) WritePacket(conn io.ReadWriter, msg []byte) (int, error) {
+	//TODO: Add support of session key
+	//KeySize := 32 //256-bit
 	BlockSize := 16
-	FakeIvLength := BlockSize - 8
+	FakeIVLength := 8
 
 	if aes.BlockSize != BlockSize {
 		panic("blocksize should be aes.blocksize")
 	}
 
 	//half padding (from ivPad), half random. Random part would be sent.
-	fakeIv := make([]byte, FakeIvLength)
-	DefaultRNG.Read(fakeIv) //fake IV
+	//create fake IV
+	fakeIV := make([]byte, FakeIVLength)
+	DefaultRNG.Read(fakeIV)
+
+	//concat fake IV with IV padding
 	iv := make([]byte, BlockSize)
-	copy(iv[0:8], ce.keys.ivPad[0:8])
-	copy(iv[8:BlockSize], fakeIv)
+	copy(iv[0:8], ce.ivPad)
+	copy(iv[8:BlockSize], fakeIV)
 
 	//encrypt iv with ivKey.
-	ivEnc, _ := aes.NewCipher(ce.keys.ivKey[0:KeySize])
-	ivEnc.Encrypt(iv, iv)
+	ce.ivCipher.Encrypt(iv, iv)
 
-	//if session Key is allocated, use it.
-	//otherwise, use commonKey.
-	var msgEnc cipher.Block
-	var msgCipher cipher.BlockMode
-	if ce.sessionKey != nil {
-		msgEnc, _ = aes.NewCipher(ce.sessionKey[:])
-		msgCipher = cipher.NewCBCEncrypter(msgEnc, iv)
-	} else {
-		msgEnc, _ = aes.NewCipher(ce.keys.commonKey[0:KeySize])
-		msgCipher = cipher.NewCBCEncrypter(msgEnc, iv)
-	}
-
-	//head = ([fake_iv 8B]) [hmac 8B][magic 4B][length 4B]
+	//head = ([fake_iv 8B]) [hmac 8B][timestamp 4B][length 4B]
 	HeadLength := 8 + 4 + 4
-	HeadIvLen := HeadLength + FakeIvLength
+	HeadIVLen := FakeIVLength + HeadLength
 
-	newLength := FakeIvLength + (HeadLength+len(msg)+(BlockSize-1))/BlockSize*BlockSize
+	newLength := FakeIVLength + (HeadLength+len(msg)+(BlockSize-1))/BlockSize*BlockSize
 	paddedMsg := make([]byte, newLength)
 
 	//Read random data, fill padding
-	DefaultRNG.Read(paddedMsg[HeadIvLen+len(msg):])
+	DefaultRNG.Read(paddedMsg[HeadIVLen+len(msg):])
 
 	//Fill all part, leave hmac zero
-	copy(paddedMsg[0:8], fakeIv)
-	copy(paddedMsg[16:20], []byte(magicStr))
-	copy(paddedMsg[HeadIvLen:], msg)
+	copy(paddedMsg[0:8], fakeIV)
+	binary.BigEndian.PutUint32(paddedMsg[16:20], timestamp())
 	binary.BigEndian.PutUint32(paddedMsg[20:24], uint32(len(msg)))
+	copy(paddedMsg[HeadIVLen:], msg)
 
 	//compute hmac
-	author := hmac.New(sha512.New, ce.keys.macKey[:])
+	author := hmac.New(sha512.New, ce.macKey)
 	author.Write(paddedMsg)
 	sig := author.Sum(nil)
 	copy(paddedMsg[8:16], sig[:8])
 
 	//then encrypt
-	msgCipher.CryptBlocks(paddedMsg[FakeIvLength:], paddedMsg[FakeIvLength:])
+	coder := cipher.NewCBCEncrypter(ce.msgCipher, iv)
+	coder.CryptBlocks(paddedMsg[FakeIVLength:], paddedMsg[FakeIVLength:])
 
 	ffid := binary.BigEndian.Uint32(msg[1:5])
 	if ffid != 0 {
@@ -131,82 +142,70 @@ func (ce cedarEncryptor) WritePacket(conn io.ReadWriter, msg []byte) (int, error
 	return conn.Write(paddedMsg)
 }
 
-func (ce cedarEncryptor) ReadPacket(conn io.ReadWriter) ([]byte, error) {
-	KeySize := 32 //256-bit
+/*
+ReadPacket reads a packet of encrypted message from conn.
+It returns the []byte got and error.
+When any error occur, the []byte returned is nil.
+*/
+func (ce CedarCryptoIO) ReadPacket(conn io.ReadWriter) ([]byte, error) {
+	// KeySize := 32 //256-bit
 	BlockSize := 16
-	FakeIvLength := BlockSize - 8
+	FakeIVLength := BlockSize - 8
 	HeadLength := 8 + 4 + 4
-	HeadIvLen := HeadLength + FakeIvLength
+	HeadIVLen := HeadLength + FakeIVLength
 
 	if aes.BlockSize != BlockSize {
 		panic("blocksize should be aes.blocksize")
 	}
 
 	//fast check header: if magic str is gone, drop it
-	fastCheck := make([]byte, HeadIvLen)
+	fastCheck := make([]byte, HeadIVLen)
 	_, err := io.ReadFull(conn, fastCheck)
 	if err != nil {
 		//Early returns cause time-based attack possible. (do not care)
-		//panic("read error at cedarEncryptor.ReadPacket") //for debug
-		return nil, errIllegalPacket
+		return nil, err
 	}
 
 	//half padding (from ivPad), half from packet.
 	iv := make([]byte, BlockSize)
-	copy(iv[0:8], ce.keys.ivPad[0:8])
+	copy(iv[0:8], ce.ivPad)
 	copy(iv[8:BlockSize], fastCheck)
 
 	//encrypt iv with ivKey.
-	ivEnc, _ := aes.NewCipher(ce.keys.ivKey[0:KeySize])
-	ivEnc.Encrypt(iv, iv)
+	ce.ivCipher.Encrypt(iv, iv)
 
 	//if session Key is allocated, use it.
 	//otherwise, use commonKey.
-	var msgEnc cipher.Block
-	var msgCipher cipher.BlockMode
-	if ce.sessionKey != nil {
-		msgEnc, _ = aes.NewCipher(ce.sessionKey[:])
-		msgCipher = cipher.NewCBCDecrypter(msgEnc, iv)
-	} else {
-		msgEnc, _ = aes.NewCipher(ce.keys.commonKey[0:KeySize])
-		msgCipher = cipher.NewCBCDecrypter(msgEnc, iv)
+	coder := cipher.NewCBCDecrypter(ce.msgCipher, iv)
+
+	//head = ([fake_iv 8B]) [hmac 8B][timestamp 4B][length 4B]
+	coder.CryptBlocks(fastCheck[FakeIVLength:HeadIVLen], fastCheck[FakeIVLength:HeadIVLen])
+	if !timeMatch(binary.BigEndian.Uint32(fastCheck[FakeIVLength+8 : FakeIVLength+12])) {
+		return nil, ErrIllegalPacket
 	}
 
-	//head = ([fake_iv 8B]) [hmac 8B][magic 4B][length 4B]
-	msgCipher.CryptBlocks(fastCheck[FakeIvLength:HeadIvLen], fastCheck[FakeIvLength:HeadIvLen])
-	if string(fastCheck[FakeIvLength+8:FakeIvLength+12]) != magicStr {
-		//panic("cedarEncryptor.ReadPacket failed checking magic string") //for debug
-		return nil, errIllegalPacket
-	}
-
-	msgLen := binary.BigEndian.Uint32(fastCheck[FakeIvLength+12 : FakeIvLength+16])
-	newLength := FakeIvLength + (HeadLength+int(msgLen)+(BlockSize-1))/BlockSize*BlockSize
+	msgLen := binary.BigEndian.Uint32(fastCheck[FakeIVLength+12 : FakeIVLength+16])
+	newLength := FakeIVLength + (HeadLength+int(msgLen)+(BlockSize-1))/BlockSize*BlockSize
 	paddedMsg := make([]byte, newLength)
 	copy(paddedMsg, fastCheck)
 
-	n, err := io.ReadFull(conn, paddedMsg[HeadIvLen:])
-	if err != nil || n != len(paddedMsg)-HeadIvLen {
-		//panic("cedarEncryptor.ReadPacket failed checking padding") //for debug
-		return nil, errIllegalPacket
+	n, err := io.ReadFull(conn, paddedMsg[HeadIVLen:])
+	if err != nil || n != len(paddedMsg)-HeadIVLen {
+		return nil, ErrIllegalPacket
 	}
-	msgCipher.CryptBlocks(paddedMsg[HeadIvLen:], paddedMsg[HeadIvLen:])
+	coder.CryptBlocks(paddedMsg[HeadIVLen:], paddedMsg[HeadIVLen:])
 
 	//check hmac
 	transferSig := make([]byte, 8)
-	copy(transferSig, paddedMsg[FakeIvLength:FakeIvLength+8])
-	binary.BigEndian.PutUint64(paddedMsg[FakeIvLength:FakeIvLength+8], 0)
+	copy(transferSig, paddedMsg[FakeIVLength:FakeIVLength+8])
+	binary.BigEndian.PutUint64(paddedMsg[FakeIVLength:FakeIVLength+8], 0)
 
-	author := hmac.New(sha512.New, ce.keys.macKey[:])
+	author := hmac.New(sha512.New, ce.macKey)
 	author.Write(paddedMsg)
 	sig := author.Sum(nil)
 	if !hmac.Equal(sig[0:8], transferSig) {
-		//panic("cedarEncryptor.ReadPacket failed checking signature") //for debug
-		return nil, errIllegalPacket
+		return nil, ErrIllegalPacket
 	}
 
-	ffid := binary.BigEndian.Uint32(paddedMsg[HeadIvLen+1 : HeadIvLen+5])
-	if ffid != 0 {
-		defer log.Println("[Encryptor.Read]", ffid)
-	}
-	return paddedMsg[HeadIvLen : HeadIvLen+int(msgLen)], nil
+	return paddedMsg[HeadIVLen : HeadIVLen+int(msgLen)], nil
 }

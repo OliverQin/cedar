@@ -19,4 +19,5 @@ profile.out
 
 # Log files for debugging
 *.log
+tmp.*
 
