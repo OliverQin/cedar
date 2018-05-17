@@ -4,7 +4,6 @@ import (
 	"crypto/sha512"
 	"encoding/hex"
 	"hash"
-	"log"
 	"sync"
 	"time"
 )
@@ -48,17 +47,17 @@ func callbackSvr(id uint32, message []byte) {
 
 	_, ok := hashersSvr[id]
 	if !ok {
-		log.Println("file", id, "created.")
+		LogDebug("file", id, "created.")
 		hashersSvr[id] = sha512.New()
 		lengthMap[id] = 0
 	}
 
 	hashersSvr[id].Write(message)
 	lengthMap[id] += len(message)
-	//log.Println(len(message), id, lengthMap[id])
+	//LogDebug(len(message), id, lengthMap[id])
 	if lengthMap[id] == testFileLength {
 		hashRet := hex.EncodeToString(hashersSvr[id].Sum(nil))
-		log.Println("file svr", id, "=", hashRet)
+		LogDebug("file svr", id, "=", hashRet)
 		if hashRet != fileSha512 {
 			panic("hash does not match, something implemented goes wrong")
 		}
@@ -72,17 +71,17 @@ func callbackClt(id uint32, message []byte) {
 
 	_, ok := hashersClt[id]
 	if !ok {
-		log.Println("file clt", id, "created.")
+		LogDebug("file clt", id, "created.")
 		hashersClt[id] = sha512.New()
 		lengthMap[id] = 0
 	}
 
 	hashersClt[id].Write(message)
 	lengthMap[id] += len(message)
-	//log.Println(len(message), id, lengthMap[id])
+	//LogDebug(len(message), id, lengthMap[id])
 	if lengthMap[id] == testFileLength {
 		hashRet := hex.EncodeToString(hashersClt[id].Sum(nil))
-		log.Println("file", id, "=", hashRet)
+		LogDebug("file", id, "=", hashRet)
 		if hashRet != fileSha512 {
 			panic("hash does not match, something implemented goes wrong")
 		}
@@ -96,7 +95,7 @@ func StartServer() {
 	go sv.ServerStart()
 
 	_ = <-serverSend
-	log.Println("Server start sending...")
+	LogDebug("Server start sending...")
 
 	fi := newPseudoRandomFile()
 	for j := 0; j < testFileLength; j += bufSize {
@@ -123,7 +122,7 @@ func StartClient() {
 		clts = append(clts, clt)
 	}
 
-	log.Println("Client start sending...")
+	LogDebug("Client start sending...")
 	fi := newPseudoRandomFile()
 	for j := 0; j < testFileLength; j += bufSize {
 		rbufSize := bufSize

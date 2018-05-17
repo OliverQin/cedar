@@ -8,7 +8,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"log"
 	"time"
 )
 
@@ -137,7 +136,7 @@ func (ce CedarCryptoIO) WritePacket(conn io.ReadWriter, msg []byte) (int, error)
 
 	ffid := binary.BigEndian.Uint32(msg[1:5])
 	if ffid != 0 {
-		defer log.Println("[Encryptor.Wrote]", ffid)
+		defer LogDebug("[Encryptor.Wrote]", ffid)
 	}
 	return conn.Write(paddedMsg)
 }

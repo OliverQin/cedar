@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"log"
 	"sync"
 
 	"github.com/OliverQin/cedar/libcedar/bundle"
@@ -32,7 +31,7 @@ func (ps *ProxyServer) bundleLost(id uint32) {
 	}
 	ps.mapLock.Unlock()
 
-	log.Println("[ProxyServer.bundleLost]", id)
+	bundle.LogDebug("[ProxyServer.bundleLost]", id)
 
 	return
 }

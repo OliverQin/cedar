@@ -1,7 +1,6 @@
 package bundle
 
 import (
-	"log"
 	"net"
 )
 
@@ -53,10 +52,10 @@ func (ep *Endpoint) ServerStart() {
 		go func() {
 			hsr, err := ep.handshaker.ConfirmHandshake(conn)
 			if err != nil {
-				log.Println("Confirm failed:", err)
+				LogDebug("Confirm failed:", err)
 				return
 			}
-			log.Println("[Endpoint.handshaked]", hsr.id)
+			LogDebug("[Endpoint.handshaked]", hsr.id)
 			bd := ep.bundles.GetBundle(hsr.id)
 
 			if bd == nil {
@@ -83,10 +82,10 @@ func (ep *Endpoint) CreateConnection(numberOfConnections int) {
 	if err != nil {
 		return
 	}
-	log.Println("Connected", ep.addr, conn)
+	LogDebug("Connected", ep.addr, conn)
 
 	hsr, err := ep.handshaker.RequestNewBundle(conn)
-	log.Println("request", hsr, err)
+	LogDebug("request", hsr, err)
 
 	bd := NewFiberBundle(ep.bufferLen, "client", &hsr)
 	bd.SetOnReceived(ep.onReceived)
@@ -112,7 +111,7 @@ func (ep *Endpoint) CreateConnection(numberOfConnections int) {
 }
 
 func (ep *Endpoint) Write(id uint32, message []byte) {
-	log.Println("[Endpoint.Write]", ShortHash(message))
+	LogDebug("[Endpoint.Write]", ShortHash(message))
 
 	var x *FiberBundle
 

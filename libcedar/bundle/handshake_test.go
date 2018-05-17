@@ -1,7 +1,6 @@
 package bundle
 
 import (
-	"log"
 	"testing"
 )
 
@@ -16,7 +15,7 @@ func TestHandshakeBasic(t *testing.T) {
 	go handshaker.ConfirmHandshake(conns[0])
 	hsr, err := handshaker.RequestNewBundle(conns[2])
 
-	log.Println("ID:", hsr.id)
+	LogDebug("ID:", hsr.id)
 	if err != nil {
 		panic("RequestNewBundle failed")
 	}

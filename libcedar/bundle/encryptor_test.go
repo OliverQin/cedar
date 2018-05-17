@@ -3,7 +3,6 @@ package bundle
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"testing"
 )
 
@@ -28,7 +27,7 @@ func TestCedarEncryptor(t *testing.T) {
 				panic(err.Error())
 			}
 			if !bytes.Equal(msg, p) {
-				log.Println("r=", r, "i=", i)
+				LogDebug("r=", r, "i=", i)
 				panic("message changed after enc/dec")
 			}
 
@@ -40,7 +39,7 @@ func TestCedarEncryptor(t *testing.T) {
 				panic(err.Error())
 			}
 			if !bytes.Equal(msg, q) {
-				log.Println("r=", r, "i=", i)
+				LogDebug("r=", r, "i=", i)
 				panic("message changed after enc/dec, using session key")
 			}*/
 		}

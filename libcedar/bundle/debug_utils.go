@@ -14,5 +14,5 @@ func ShortHash(msg []byte) string {
 	h.Write(msg)
 	hval := "sh" + hex.EncodeToString(h.Sum(nil)[:6])
 	return hval
-	//log.Println("clt Rec:", hval)
+	//LogDebug("clt Rec:", hval)
 }

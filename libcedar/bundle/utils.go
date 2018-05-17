@@ -41,7 +41,7 @@ func (bd *FiberBundle) seqCheck(packetId uint32) int {
 	seqA := atomic.LoadUint32(&bd.seqs[download])
 	seqB := seqA + bd.bufferLen
 
-	//log.Println("Range: ", seqA, seqB, packetId)
+	//LogDebug("Range: ", seqA, seqB, packetId)
 	if inRange(packetId, seqA, seqB) {
 		return seqInRange
 	}

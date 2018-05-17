@@ -14,7 +14,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"log"
 	"sync/atomic"
 	"time"
 )
@@ -133,7 +132,7 @@ func (fb *Fiber) unpack(msg []byte) *FiberPacket {
 }
 
 func (fb *Fiber) read() (*FiberPacket, error) {
-	//log.Println("[Fiber.read.reading]", fb)
+	//LogDebug("[Fiber.read.reading]", fb)
 	msg, err := fb.encryptor.ReadPacket(fb.conn)
 
 	if err != nil {
@@ -143,7 +142,7 @@ func (fb *Fiber) read() (*FiberPacket, error) {
 	ret := fb.unpack(msg)
 
 	if ret.msgType == typeSendData {
-		log.Println("[Fiber.read]", ret.id)
+		LogDebug("[Fiber.read]", ret.id)
 	}
 
 	atomic.StoreInt64(&fb.lastRead, time.Now().Unix())
@@ -155,7 +154,7 @@ func (fb *Fiber) write(f FiberPacket) error {
 	packed := fb.pack(&f)
 	n, err := fb.encryptor.WritePacket(fb.conn, packed)
 	if f.msgType == typeSendData {
-		log.Println("[Fiber.write]", f.id)
+		LogDebug("[Fiber.write]", f.id)
 	}
 	if n < len(packed) || err != nil {
 		//panic("write error should not happen") //for debug

@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"log"
 	"sync"
 	"sync/atomic"
 )
@@ -150,7 +149,7 @@ func (hs *Handshaker) createNewBundle(conn io.ReadWriteCloser) (HandshakeResult,
 		return HandshakeResult{}, err
 	}
 
-	log.Println("createNewBundle success!", conn, id, seqS2c, seqC2s)
+	LogDebug("createNewBundle success!", conn, id, seqS2c, seqC2s)
 	return HandshakeResult{id, seqS2c, seqC2s, conn}, nil
 }
 
@@ -235,6 +234,6 @@ func (hs *Handshaker) getResponse(conn io.ReadWriteCloser) (HandshakeResult, err
 	ret.idC2S = binary.BigEndian.Uint32(msg[16:20])
 	ret.conn = conn
 
-	log.Println("getResponse success!", ret)
+	LogDebug("getResponse success!", ret)
 	return ret, nil
 }

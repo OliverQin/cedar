@@ -2,7 +2,6 @@ package bundle
 
 import (
 	"encoding/binary"
-	"log"
 	"sync"
 )
 
@@ -39,7 +38,7 @@ func (lst *bundleReceivedIDs) getMessage() []byte {
 	ret := make([]byte, len(lst.confirmBuffer)*4)
 	for i := 0; i < len(ret); i += 4 {
 		binary.BigEndian.PutUint32(ret[i:i+4], lst.confirmBuffer[i/4])
-		log.Println("[keepConfirming.confirmSent]", lst.confirmBuffer[i/4])
+		LogDebug("[keepConfirming.confirmSent]", lst.confirmBuffer[i/4])
 	}
 	lst.confirmBuffer = lst.confirmBuffer[:0]
 
