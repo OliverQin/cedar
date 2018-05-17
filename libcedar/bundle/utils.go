@@ -1,6 +1,7 @@
 package bundle
 
 import (
+	"log"
 	"sync/atomic"
 )
 
@@ -9,6 +10,24 @@ const (
 	seqReceived
 	seqOutOfRange
 )
+
+var debugVerbose = 0
+
+func innerLog(level int, a ...interface{}) {
+	if debugVerbose >= level {
+		log.Println(a)
+	}
+}
+
+//LogDebug prints info
+func LogDebug(a ...interface{}) {
+	innerLog(10, a)
+}
+
+//LogInfo prints info
+func LogInfo(a ...interface{}) {
+	innerLog(0, a)
+}
 
 func inRange(seq, start, end uint32) bool {
 	if start < end {
