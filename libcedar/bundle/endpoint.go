@@ -51,19 +51,21 @@ func (ep *Endpoint) ServerStart() {
 		}
 
 		go func() {
-			hsr, _ := ep.handshaker.ConfirmHandshake(conn)
+			hsr, err := ep.handshaker.ConfirmHandshake(conn)
+			if err != nil {
+				log.Println("Confirm failed:", err)
+				return
+			}
 			log.Println("[Endpoint.handshaked]", hsr.id)
-			if ep.bundles.HasID(hsr.id) {
-				bd := ep.bundles.GetBundle(hsr.id)
-				NewFiber(hsr.conn, ep.encryptor, bd)
-			} else {
-				bd := NewFiberBundle(ep.bufferLen, "server", &hsr)
+			bd := ep.bundles.GetBundle(hsr.id)
+
+			if bd == nil {
+				bd = NewFiberBundle(ep.bufferLen, "server", &hsr)
 				bd.SetOnReceived(ep.onReceived)
 				bd.SetOnBundleLost(ep.onBundleLost)
 				ep.bundles.AddBundle(bd)
-				NewFiber(hsr.conn, ep.encryptor, bd)
 			}
-
+			NewFiber(hsr.conn, ep.encryptor, bd)
 		}()
 	}
 }

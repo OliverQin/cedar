@@ -201,7 +201,7 @@ func (hs *Handshaker) addBundle(conn io.ReadWriteCloser, id uint32) (HandshakeRe
 func (hs *Handshaker) ConfirmHandshake(conn io.ReadWriteCloser) (HandshakeResult, error) {
 	msg, err := hs.encryptor.ReadPacket(conn)
 	if err != nil {
-		return HandshakeResult{}, ErrHandshakeFailed
+		return HandshakeResult{}, err
 	}
 
 	if len(msg) >= 16 {
