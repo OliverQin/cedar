@@ -1,7 +1,15 @@
 language: go
 
+os:
+    - linux
+    - osx
+    - windows
+
+matrix:
+    allow_failures:
+        - os: windows
+
 go:
-    - "1.7"
     - "1.8"
     - "1.9"
 
