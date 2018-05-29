@@ -63,7 +63,10 @@ type endpointConfig struct {
 	EndpointType int
 }
 
-const defaultBufferLength = 8192
+/*
+DefaultBufferLength is the length of each buffer, by default.
+*/
+const DefaultBufferLength = 8192
 
 /*
 server and client are types of Endpoint.
@@ -83,7 +86,7 @@ func NewServer() *Endpoint {
 
 	ret.idCounter = 0
 	ret.conns = make(map[uint16]net.Conn)
-	ret.config = endpointConfig{defaultBufferLength, server}
+	ret.config = endpointConfig{DefaultBufferLength, server}
 
 	ret.address = ""
 
@@ -101,7 +104,7 @@ func NewClient(addr string) *Endpoint {
 
 	ret.idCounter = 0
 	ret.conns = make(map[uint16]net.Conn)
-	ret.config = endpointConfig{defaultBufferLength, client}
+	ret.config = endpointConfig{DefaultBufferLength, client}
 
 	ret.address = addr
 

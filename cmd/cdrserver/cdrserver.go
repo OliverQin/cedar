@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strconv"
 
 	"github.com/OliverQin/cedar/libcedar/proxy"
+	"github.com/OliverQin/cedar/libcedar/socks"
 )
 
 func PrintUsage() {
@@ -36,7 +38,7 @@ func main() {
 	flag.StringVar(&remoteAddr, "s", "127.0.0.1:41289", "Remote (cdrserver) address and port, like \"127.0.0.1:41289\".")
 	flag.StringVar(&password, "p", "123456", "Password for encryption.")
 	flag.StringVar(&configFilename, "c", "", "Filename of config file. It overwrites command line parameters.")
-	flag.IntVar(&bufferSize, "b", 100, "Max number of buffers.")
+	flag.IntVar(&bufferSize, "b", 100, "Max number of buffers. Size of each buffer is "+strconv.Itoa(socks.DefaultBufferLength)+"B.")
 
 	flag.Parse()
 
