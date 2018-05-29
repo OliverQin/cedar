@@ -330,7 +330,16 @@ func (bd *FiberBundle) FiberClosed(fb *Fiber) {
 	bd.callbackLock.RUnlock()
 
 	if lenFibers == 0 {
-		bd.Close(ErrAllFibersLost)
+		//Wait three minutes, if no new fibers created, close this channel
+		go func() {
+			time.Sleep(3 * time.Minute) //TODO: make a constant here
+			bd.fibersLock.Lock()
+			lenNow := len(bd.fibers)
+			bd.fibersLock.Unlock()
+			if lenNow == 0 {
+				bd.Close(ErrAllFibersLost)
+			}
+		}()
 	}
 }
 

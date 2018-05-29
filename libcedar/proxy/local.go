@@ -24,7 +24,12 @@ func NewProxyLocal(password string, remote string, local string, bufferSize int)
 		return nil //TODO: signature not good, add error
 	}
 
+	createNewFiber := func(id uint32) {
+		go ret.tunnel.AddConnection()
+	}
+
 	ret.tunnel.SetOnReceived(remoteToSocks)
+	ret.tunnel.SetOnFiberLost(createNewFiber)
 	ret.client.OnCommandGenerated = socksToRemote
 
 	return ret

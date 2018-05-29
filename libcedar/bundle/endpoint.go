@@ -14,6 +14,7 @@ type Endpoint struct {
 	handshaker   *Handshaker
 
 	onReceived   FuncDataReceived
+	onFiberLost  FuncFiberLost
 	onBundleLost FuncBundleLost
 }
 
@@ -62,6 +63,7 @@ func (ep *Endpoint) ServerStart() {
 				bd = NewFiberBundle(ep.bufferLen, "server", &hsr)
 				bd.SetOnReceived(ep.onReceived)
 				bd.SetOnBundleLost(ep.onBundleLost)
+				bd.SetOnFiberLost(ep.onFiberLost)
 				ep.bundles.AddBundle(bd)
 			}
 			NewFiber(hsr.conn, ep.encryptor, bd)
@@ -89,6 +91,8 @@ func (ep *Endpoint) CreateConnection(numberOfConnections int) {
 
 	bd := NewFiberBundle(ep.bufferLen, "client", &hsr)
 	bd.SetOnReceived(ep.onReceived)
+	bd.SetOnBundleLost(ep.onBundleLost)
+	bd.SetOnFiberLost(ep.onFiberLost)
 	NewFiber(hsr.conn, ep.encryptor, bd)
 
 	err = ep.bundles.AddBundle(bd)
@@ -98,16 +102,21 @@ func (ep *Endpoint) CreateConnection(numberOfConnections int) {
 	}
 
 	for i := 1; i < numberOfConnections; i++ {
-		conn, err = net.Dial("tcp", ep.addr)
-		if err != nil {
-			continue
-		}
-		_, err := ep.handshaker.RequestAddToBundle(conn, hsr.id)
-		if err != nil {
-			continue
-		}
-		NewFiber(conn, ep.encryptor, bd)
+		ep.AddConnection()
 	}
+}
+
+func (ep *Endpoint) AddConnection() {
+	conn, err := net.Dial("tcp", ep.addr)
+	if err != nil {
+		return
+	}
+	id := ep.bundles.GetMain().id
+	_, err = ep.handshaker.RequestAddToBundle(conn, id)
+	if err != nil {
+		return
+	}
+	NewFiber(conn, ep.encryptor, ep.bundles.GetMain())
 }
 
 func (ep *Endpoint) Write(id uint32, message []byte) {
@@ -129,4 +138,8 @@ func (ep *Endpoint) SetOnReceived(f FuncDataReceived) {
 
 func (ep *Endpoint) SetOnBundleLost(f FuncBundleLost) {
 	ep.onBundleLost = f
+}
+
+func (ep *Endpoint) SetOnFiberLost(f FuncFiberLost) {
+	ep.onFiberLost = f
 }
